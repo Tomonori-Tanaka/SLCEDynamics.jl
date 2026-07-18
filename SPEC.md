@@ -34,6 +34,7 @@ boundary (`MU_B_EV_T`). Anchor: g = 2, 1 T → 27.9925 GHz (`test_units.jl`).
 | `src/run.jl` | `run_llg` driver (fixed step; measurements at step 0, every `measure_interval`, and always at the final step) + `LLGResult`; user observables — the SAME `SCEMonteCarlo.Observable(name, ncomp, f)` definitions the MC drivers accept (`f(config, energy, H)`, fed the **SCE** energy so a definition measures identically in both packages) — recorded as `ncomp × n_measurements` time-series matrices in `LLGResult.series`; the shared stepping loop `_llg_loop!` (also the resume entry) |
 | `src/checkpoint.jl` | JLD2 checkpoint/resume (schema below) — `run_llg(...; checkpoint, checkpoint_interval)` writer + `resume(path, prob::LLGProblem)` (a method of `SCEMonteCarlo.resume`, re-exported) |
 | `src/fft.jl` | own power-of-two radix-2 FFT + Hann/rect windows (deliberately not FFTW — determinism; gated against a reference DFT) |
+| `src/gpu/{state,kernels,run}.jl` | the GPU path: `GPULLGState`, the stage/noise/renorm kernels (literal `_omega`/`_rotate`/`_fill_noise!` ports), `run_llg_gpu`/`_llg_loop_gpu!`/the device `resume` method |
 | `src/sqw.jl` | S(q,ω): `trajectory_observable`/`trajectory`, `q_path`, `structure_factor` (4 methods) → `SQWResult` (full 3×3 Hermitian tensor + separated elastic tensor), reductions `sqw_diag`/`sqw_trace`/`sqw_perp`/`sqw_plusminus`/`sqw_elastic`, axis helpers, `channel_sumrule` |
 
 ## Conventions and invariants
@@ -183,9 +184,39 @@ sign and normalization frozen by exact deterministic gates (`test_sqw_gates.jl`,
   the classical→quantum `βħω/(1−e^{−βħω})` intensity factor, powder averaging,
   local-frame transverse splits, GPU.
 
+## GPU path (implemented; A100 go/no-go pending)
+
+`run_llg_gpu(prob, config0, gH; …)` (public unexported until the go/no-go;
+decision record `docs/specs/gpu-llg.md` + SCEMonteCarlo's G7) runs both
+integrators, deterministic and sLLG, on a KernelAbstractions backend over
+SCEMonteCarlo's device gradient (`gpu_energy_gradient!`). Key properties:
+
+- The noise stream is the SAME stateless Philox `(seed, site, step)` as the CPU
+  path — a same-seed CPU and GPU run are one stochastic realization, differing
+  only through gradient-fold/rotation roundoff. Measurements/checkpoints run on
+  host snapshots (downloaded only on measurement/checkpoint events), so
+  `LLGResult`/`equilibrium_stats`/`structure_factor`/checkpoint files are
+  identical in kind to the CPU path's.
+- Determinism: bitwise for fixed (`seed`, backend, `workgroupsize`, package +
+  Julia version). The bitwise CI tier compares against the composite keyed
+  reference (upstream `_gradient_lane_ref!` + literal stage expressions) on the
+  KA-CPU backend; CPU↔GPU is a tolerance/statistical comparison only.
+- Checkpoint schema v2 records (`compute`, `backend`, `workgroupsize`); v1
+  back-read. `resume(path, prob, gH)` continues/extends bit-identically on the
+  same backend+ws; any compute switch needs `allow_compute_switch = true`
+  (same realization, not bit-identical — loud by design).
+- Gates (`test_gpu_llg.jl`, all local): noise kernel ≡ host `_fill_noise!`
+  bitwise (incl. the inactive exact-+0.0 rule); full driver ≡ composite keyed
+  reference bitwise (both integrators, det + sLLG, ws ∈ {4, 32});
+  repeat/seed/ws sensitivity; GPU checkpoint/resume/extension bitwise; schema
+  v1 back-read; device Larmor exactness; CPU-vs-GPU tolerance on the
+  non-chaotic dimer; FDT pipeline smoke. **No performance claims until the
+  A100 bench (`bench/bench_gpu_llg.jl`) measures the l044 8³ step — the ≥ 5×
+  go/no-go bar.**
+
 ## Planned
 
 - Seams kept open: integrator dispatch (`_step!`), additive torque terms beyond
-  energy gradients (STT/SOT), observable callback at stride, `NoiseModel`.
-- Later: GNEB, Mentink SIB, adaptive dt, GPU (needs the device ∇Z in
-  SCEMonteCarlo — its phase 2).
+  energy gradients (STT/SOT), observable callback at stride, `NoiseModel`,
+  device-side observable reductions / async-overlap measurement.
+- Later: GNEB, Mentink SIB, adaptive dt, GPU S(q,ω), multi-GPU.

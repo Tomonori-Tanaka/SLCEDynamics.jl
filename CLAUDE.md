@@ -73,6 +73,22 @@ equation, unit system, and the settled stochastic-LLG design.
   bug the crash-resume gate in `test_checkpoint.jl` caught). The model identity
   is `SCEMonteCarlo.model_fingerprint` (upstream public facade — its mixing is
   part of this file format too).
+- **GPU stage kernels ↔ the host `_omega`/`_rotate`/`_fill_noise!`/
+  `_renormalize_active!` ↔ the composite keyed reference** (`src/gpu/kernels.jl`
+  ↔ `integrators.jl`/`noise.jl` ↔ `test_gpu_llg.jl`'s `_ref_gpu_step!`): the
+  device kernels are literal expression-order ports; change the host expression
+  and the kernels AND the test reference move together (bitwise gates on the
+  KA-CPU backend). The noise kernel's inactive branch writes an exact
+  `zero(SVector)` — `σ·ξ` at `σ = 0` would emit −0.0 (D12,
+  `docs/specs/gpu-llg.md`). The gradient side of the reference is
+  `SCEMonteCarlo._gradient_lane_ref!` by qualified name — an upstream rename
+  breaks the a3 gate.
+- **Checkpoint schema v2 ↔ `_RunSpec` compute fields ↔ both resume methods**
+  (`checkpoint.jl`, `src/gpu/run.jl`): `run/compute`/`run/backend`/
+  `run/workgroupsize` are trajectory-defining on the GPU path and validated on
+  resume like `dt`/`seed`; the v1 back-read branch (compute = "cpu", ws = 0)
+  stays alive as long as v1 files circulate; `_ck_due` must mirror
+  `_ck_llg!`'s cadence exactly (the GPU loop snapshots only when it fires).
 - **`equilibrium_stats` ↔ SCEMonteCarlo's `_finalize_stats`**: `stats.jl`
   deliberately parallels the MC finalization (bin size
   `max(1, fld(kept, nbins))`, jackknife over `bin_means`, the

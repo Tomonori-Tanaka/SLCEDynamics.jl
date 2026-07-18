@@ -17,7 +17,10 @@ Fields:
 - `config` — the final configuration, plus the run parameters. For a
   thermostatted run, `kT` [eV] and the `seed` are recorded (`kT = NaN`,
   `seed = 0` for a deterministic run); `n_active` is the active-site count
-  (what per-site [`equilibrium_stats`](@ref) evaluables normalize by).
+  (what per-site [`equilibrium_stats`](@ref) evaluables normalize by);
+  `compute` is the provenance tag (`"cpu"`, or `"gpu:<backend>"` from
+  `run_llg_gpu` — GPU trajectories are bit-reproducible only for a fixed
+  backend and workgroup size).
 """
 struct LLGResult
     times::Vector{Float64}
@@ -31,17 +34,22 @@ struct LLGResult
     kT::Float64
     seed::UInt64
     n_active::Int
+    compute::String
 end
 
 function Base.show(io::IO, r::LLGResult)
     therm = isfinite(r.kT) ? ", kT = $(r.kT)" : ""
-    print(io, "LLGResult($(r.nsteps) steps, dt = $(r.dt) fs$(therm), ",
+    tag = r.compute == "cpu" ? "" : ", $(r.compute)"
+    print(io, "LLGResult($(r.nsteps) steps, dt = $(r.dt) fs$(therm)$(tag), ",
           "$(length(r.times)) measurements, E_end = $(r.energies[end]))")
 end
 
 # The resolved, trajectory-defining parameters of one run (everything the
-# continuation of a checkpointed run must reproduce verbatim; execution details
-# like ntasks stay outside). `kt = NaN` marks a deterministic run.
+# continuation of a checkpointed run must reproduce verbatim). `kt = NaN` marks
+# a deterministic run. On the CPU path `ntasks` stays outside (bit-identical for
+# any value); on the GPU path `compute`/`backend_tag`/`workgroupsize` ARE
+# trajectory-defining (the gradient fold order depends on them) and therefore
+# live here and in the checkpoint (`:cpu` runs carry `("", 0)`).
 struct _RunSpec
     prob::LLGProblem
     integrator::AbstractIntegrator
@@ -52,7 +60,13 @@ struct _RunSpec
     kt::Float64
     seed::UInt64
     observables::Vector{Observable}
+    compute::Symbol                  # :cpu | :gpu
+    backend_tag::String              # "" on the CPU path
+    workgroupsize::Int               # 0 on the CPU path
 end
+
+_compute_string(spec::_RunSpec)::String =
+    spec.compute === :cpu ? "cpu" : "gpu:" * spec.backend_tag
 
 # The measurement record under construction: the LLGResult arrays plus the count
 # of columns filled so far (what a mid-run checkpoint persists).
@@ -190,7 +204,7 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
         seed_u = 0
     end
     spec = _RunSpec(prob, integrator, dtf, ns, mi, Int(renorm_interval), kt,
-                    seed_u, observables)
+                    seed_u, observables, :cpu, "", 0)
     ck = _make_llg_checkpointer(checkpoint, checkpoint_interval, prob)
     tr = _make_trace(spec)
     tr.k = 1
@@ -231,7 +245,8 @@ function _llg_loop!(spec::_RunSpec, config::SpinConfig, tr::_Trace, step0::Int,
     end
     _ck_llg!(ck, spec, config, tr, ns, true)      # the completion write
     return LLGResult(tr.times, tr.energies, tr.means, tr.series, config, ns,
-                     spec.dt, mi, spec.kt, spec.seed, H.n_active)
+                     spec.dt, mi, spec.kt, spec.seed, H.n_active,
+                     _compute_string(spec))
 end
 
 # One measurement row: the SCE energy is computed once and shared by the

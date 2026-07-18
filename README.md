@@ -36,7 +36,12 @@ Atomistic spin dynamics (Landau–Lifshitz–Gilbert) for fitted spin-cluster-ex
   averaging and seed ensembles. Conventions pinned by exact analytic gates
   (Larmor, dimer, ring dispersion, Parseval sum rules).
 
-Planned next: GNEB, SIB, GPU. See `SPEC.md`.
+- **GPU path** (`run_llg_gpu`, A100 validation pending): the same runs on a
+  KernelAbstractions backend — same noise stream (a same-seed CPU/GPU pair is
+  one stochastic realization), same result/checkpoint semantics, bitwise
+  reproducible per (seed, backend, workgroupsize).
+
+Planned next: GNEB, SIB, GPU S(q,ω). See `SPEC.md`.
 
 ## Quick start
 

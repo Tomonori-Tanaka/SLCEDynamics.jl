@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- GPU LLG/sLLG (`run_llg_gpu`, public unexported pending the A100 go/no-go;
+  decision record `docs/specs/gpu-llg.md`): both integrators on a
+  KernelAbstractions backend over SCEMonteCarlo's new device gradient
+  (`gpu_energy_gradient!`, its G7). The noise stream is the same stateless
+  Philox `(seed, site, step)` as the CPU path (same-seed runs are one
+  realization across backends); measurements/checkpoints run on host snapshots
+  downloaded only at measurement/checkpoint events, so results, statistics,
+  S(q,ω), and checkpoint files are identical in kind. Determinism: bitwise for
+  fixed (seed, backend, workgroupsize); CI gates the whole driver bitwise
+  against a composite keyed reference on the KA-CPU backend. Checkpoint schema
+  v2 records (compute, backend, workgroupsize), back-reads v1; the new
+  `resume(path, prob, gH)` method continues/extends bit-identically on the
+  same backend+ws and refuses compute switches without
+  `allow_compute_switch = true`. `LLGResult` gains a `compute` provenance
+  field. No performance claims yet — the A100 bench (`bench/bench_gpu_llg.jl`)
+  and its ≥ 5× l044-8³ bar are the go/no-go.
 - S(q,ω): the classical dynamical spin structure factor from recorded
   trajectories. `trajectory_observable(H)` records the full configuration
   through the ordinary observable machinery (inheriting cadence, checkpoint

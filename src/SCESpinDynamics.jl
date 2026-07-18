@@ -22,6 +22,7 @@ integrators consume no RNG and are bit-reproducible for any `ntasks`
 module SCESpinDynamics
 
 using JLD2: jldopen
+using KernelAbstractions: KernelAbstractions, @kernel, @index, @Const
 using LinearAlgebra: norm, normalize, dot, cross
 using StaticArrays
 using Statistics: mean
@@ -46,6 +47,8 @@ export homega_ev, homega_mev, freq_thz
 export Observable, Evaluable, resume
 public AbstractIntegrator
 public channel_sumrule
+# GPU path (public-unexported until the A100 go/no-go, mirroring the sibling)
+public run_llg_gpu, GPULLGState
 
 include("units.jl")
 include("problem.jl")
@@ -56,5 +59,8 @@ include("checkpoint.jl")
 include("stats.jl")
 include("fft.jl")
 include("sqw.jl")
+include("gpu/state.jl")
+include("gpu/kernels.jl")
+include("gpu/run.jl")
 
 end # module SCESpinDynamics

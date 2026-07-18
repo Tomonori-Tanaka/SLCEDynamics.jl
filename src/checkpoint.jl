@@ -8,7 +8,10 @@
 # bit-exactly. That statelessness also permits *extending* a run: continuing to a
 # larger `nsteps` is bit-identical to an uninterrupted longer run.
 
-const _CKPT_SCHEMA_LLG = 1
+# v2 adds the compute provenance (`run/compute`, `run/backend`,
+# `run/workgroupsize`) — trajectory-defining on the GPU path; v1 files are
+# back-read as `compute = "cpu"`.
+const _CKPT_SCHEMA_LLG = 2
 
 # The run-side writer state: target path, write cadence, and the cached model
 # fingerprint (SCEMonteCarlo's stable FNV-1a, the shared identity check).
@@ -73,6 +76,9 @@ function _write_ckpt_llg(ck::_LLGCheckpointer, spec::_RunSpec, config::SpinConfi
         f["run/integrator"] = _integrator_name(spec.integrator)
         f["run/kT"] = spec.kt                    # NaN ⇒ deterministic run
         f["run/seed"] = spec.seed
+        f["run/compute"] = String(spec.compute)
+        f["run/backend"] = spec.backend_tag
+        f["run/workgroupsize"] = spec.workgroupsize
         f["run/observable_names"] = String[String(o.name) for o in spec.observables]
         f["run/observable_ncomps"] = Int[o.ncomp for o in spec.observables]
         f["progress/step"] = step
@@ -104,57 +110,33 @@ function _ck_llg!(ck::_LLGCheckpointer, spec::_RunSpec, config::SpinConfig,
     return nothing
 end
 
-"""
-    resume(path, prob::LLGProblem;
-           observables = Observable[], nsteps = nothing, ntasks = 1,
-           checkpoint = path, checkpoint_interval = nothing) -> LLGResult
+# Whether the NEXT `_ck_llg!` call at this step would actually write — the GPU
+# loop uses this to prepare a host snapshot only when one is needed. Must mirror
+# `_ck_llg!`'s cadence exactly (coupled site).
+_ck_due(::Nothing, ::Bool)::Bool = false
+_ck_due(ck::_LLGCheckpointer, final::Bool)::Bool =
+    final || (ck.interval > 0 && ck.since + 1 >= ck.interval)
 
-Continue a checkpointed [`run_llg`](@ref) from the state saved at `path` and
-return the **full** run's result — bit-identical to the uninterrupted run (the
-thermal noise is a stateless function of `(seed, site, step)`, so no RNG state
-exists to restore). Calling it on the checkpoint of a *completed* run
-reconstructs that run's `LLGResult` without stepping (idempotent — safe in a
-job-array retry loop).
-
-The caller re-supplies the `LLGProblem` and the observable *functions* (closures
-are not serialized); the checkpoint stores the model fingerprint, the problem
-parameters (`magmom`/`alpha`/`g`/`b_ext`, compared on active sites), and the
-observable names/component counts, and errors on any mismatch. Everything
-trajectory-defining (`dt`, `measure_interval`, `renorm_interval`, integrator,
-`kT`, `seed`) comes from the file and cannot be overridden.
-
-- `nsteps`: target total step count (default: the stored one). A value larger
-  than the stored `nsteps` **extends** the run — bit-identical to a single
-  uninterrupted run of that length. Extension past a completed run whose final
-  measurement was off the `measure_interval` grid is refused (its recorded
-  trace would not be a prefix of the longer run's).
-- `checkpoint` / `checkpoint_interval`: by default the resumed run keeps
-  checkpointing to the same `path` with the stored cadence (`checkpoint =
-  nothing` disables; `checkpoint_interval` overrides).
-"""
-function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
-        observables::Vector{Observable} = Observable[],
-        nsteps::Union{Nothing,Integer} = nothing,
-        ntasks::Integer = 1,
-        checkpoint::Union{Nothing,AbstractString} = path,
-        checkpoint_interval::Union{Nothing,Integer} = nothing)::LLGResult
+# Read and validate an LLG checkpoint eagerly, closing the file before any long
+# computation starts (the resumed run typically overwrites this very path).
+# Shared by the CPU and GPU resume methods.
+function _read_llg_ckpt(path::AbstractString, prob::LLGProblem,
+                        observables::Vector{Observable})
     isfile(path) || throw(ArgumentError("no checkpoint file at $path"))
-    ntasks >= 1 || throw(ArgumentError("ntasks must be ≥ 1; got $ntasks"))
     H = prob.H
     n = n_sites(H)
     allunique(o.name for o in observables) ||
         throw(ArgumentError("observable names must be unique"))
-    # Read and validate everything eagerly, closing the file before the long
-    # computation starts (the resumed run typically overwrites this very path).
-    data = jldopen(String(path), "r") do f
+    return jldopen(String(path), "r") do f
         # kind before schema: an MC/PT file (schema v2 upstream) should say
         # "wrong kind", not masquerade as a package-version mismatch
         f["kind"] == "llg" || error(
             "checkpoint kind \"$(f["kind"])\" is not an LLG run — MC/PT " *
             "checkpoints resume via resume(path, H::TiledHamiltonian)")
-        f["schema_version"] == _CKPT_SCHEMA_LLG || error(
-            "checkpoint schema v$(f["schema_version"]) ≠ " *
-            "v$(_CKPT_SCHEMA_LLG) of this package version")
+        ver = f["schema_version"]
+        ver in (1, 2) || error(
+            "checkpoint schema v$(ver) is not readable by this package " *
+            "version (knows v1–v$(_CKPT_SCHEMA_LLG))")
         f["model_fingerprint"] == model_fingerprint(H) || error(
             "checkpoint model fingerprint does not match this LLGProblem's " *
             "Hamiltonian (different model, dims, or coefficients)")
@@ -182,6 +164,9 @@ function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
          renorm = f["run/renorm_interval"]::Int,
          integrator = _integrator_from_name(f["run/integrator"]::String),
          kt = f["run/kT"]::Float64, seed = f["run/seed"]::UInt64,
+         compute = ver >= 2 ? f["run/compute"]::String : "cpu",
+         backend_tag = ver >= 2 ? f["run/backend"]::String : "",
+         workgroupsize = ver >= 2 ? f["run/workgroupsize"]::Int : 0,
          step = f["progress/step"]::Int, k = f["progress/nmeas"]::Int,
          config = _config_verbatim(f["state/config"]::Matrix{Float64}, n),
          times = f["trace/times"]::Vector{Float64},
@@ -192,6 +177,11 @@ function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
              for o in observables),
          stored_interval = f["checkpoint_interval"]::Int)
     end
+end
+
+# Target-step resolution and the trace-prefix grid checks (shared by both
+# resume methods).
+function _resume_target(data, nsteps::Union{Nothing,Integer})::Int
     # a package-written file always satisfies these; fail cleanly on corruption
     (data.mi >= 1 && data.renorm >= 0 && data.step >= 0 && data.k >= 1) || error(
         "checkpoint run parameters are corrupted (measure_interval = " *
@@ -222,9 +212,13 @@ function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
             "checkpoint trace is inconsistent ($(data.k) measurements at " *
             "step $(data.step) with measure_interval $(data.mi))")
     end
+    return ns_t
+end
 
-    spec = _RunSpec(prob, data.integrator, data.dt, ns_t, data.mi, data.renorm,
-                    data.kt, data.seed, observables)
+# Build the trace prefix (and the truncation-edge final measurement) for a
+# resume — shared by both resume methods.
+function _resume_trace(spec::_RunSpec, data, prob::LLGProblem,
+                       observables::Vector{Observable})
     tr = _make_trace(spec)
     copyto!(tr.times, 1, data.times, 1, data.k)
     copyto!(tr.energies, 1, data.energies, 1, data.k)
@@ -237,13 +231,61 @@ function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
     end
     tr.k = data.k
     config = data.config
-    # resuming a mid-run file to exactly its own step: the loop below is empty,
-    # so take the (off-grid) final measurement it would otherwise record
-    if ns_t == data.step && tr.k < _nmeas(ns_t, data.mi)
+    # resuming a mid-run file to exactly its own step: the continuation loop is
+    # empty, so take the (off-grid) final measurement it would otherwise record
+    if spec.nsteps == data.step && tr.k < _nmeas(spec.nsteps, data.mi)
         tr.k += 1
         _measure!(tr.energies, tr.means, tr.series, observables, tr.k,
-                  ns_t * data.dt, tr.times, prob, config)
+                  spec.nsteps * data.dt, tr.times, prob, config)
     end
+    return tr, config
+end
+
+"""
+    resume(path, prob::LLGProblem;
+           observables = Observable[], nsteps = nothing, ntasks = 1,
+           checkpoint = path, checkpoint_interval = nothing) -> LLGResult
+
+Continue a checkpointed [`run_llg`](@ref) from the state saved at `path` and
+return the **full** run's result — bit-identical to the uninterrupted run (the
+thermal noise is a stateless function of `(seed, site, step)`, so no RNG state
+exists to restore). Calling it on the checkpoint of a *completed* run
+reconstructs that run's `LLGResult` without stepping (idempotent — safe in a
+job-array retry loop). A checkpoint written by `run_llg_gpu` is refused here —
+resume it with the `resume(path, prob, gH)` method.
+
+The caller re-supplies the `LLGProblem` and the observable *functions* (closures
+are not serialized); the checkpoint stores the model fingerprint, the problem
+parameters (`magmom`/`alpha`/`g`/`b_ext`, compared on active sites), and the
+observable names/component counts, and errors on any mismatch. Everything
+trajectory-defining (`dt`, `measure_interval`, `renorm_interval`, integrator,
+`kT`, `seed`) comes from the file and cannot be overridden.
+
+- `nsteps`: target total step count (default: the stored one). A value larger
+  than the stored `nsteps` **extends** the run — bit-identical to a single
+  uninterrupted run of that length. Extension past a completed run whose final
+  measurement was off the `measure_interval` grid is refused (its recorded
+  trace would not be a prefix of the longer run's).
+- `checkpoint` / `checkpoint_interval`: by default the resumed run keeps
+  checkpointing to the same `path` with the stored cadence (`checkpoint =
+  nothing` disables; `checkpoint_interval` overrides).
+"""
+function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
+        observables::Vector{Observable} = Observable[],
+        nsteps::Union{Nothing,Integer} = nothing,
+        ntasks::Integer = 1,
+        checkpoint::Union{Nothing,AbstractString} = path,
+        checkpoint_interval::Union{Nothing,Integer} = nothing)::LLGResult
+    ntasks >= 1 || throw(ArgumentError("ntasks must be ≥ 1; got $ntasks"))
+    data = _read_llg_ckpt(path, prob, observables)
+    data.compute == "cpu" || error(
+        "this checkpoint was written by run_llg_gpu (compute = " *
+        "\"$(data.compute)\", workgroupsize = $(data.workgroupsize)) — resume " *
+        "it with resume(path, prob, gH::GPUTiledHamiltonian; ...)")
+    ns_t = _resume_target(data, nsteps)
+    spec = _RunSpec(prob, data.integrator, data.dt, ns_t, data.mi, data.renorm,
+                    data.kt, data.seed, observables, :cpu, "", 0)
+    tr, config = _resume_trace(spec, data, prob, observables)
     interval = checkpoint_interval === nothing ? data.stored_interval :
                Int(checkpoint_interval)
     ck = _make_llg_checkpointer(checkpoint, interval, prob)
