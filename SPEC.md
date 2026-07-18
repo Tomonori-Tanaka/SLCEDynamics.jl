@@ -31,7 +31,8 @@ boundary (`MU_B_EV_T`). Anchor: g = 2, 1 T → 27.9925 GHz (`test_units.jl`).
 | `src/units.jl` | `HBAR_EV_FS` (exact SI ratio), `MU_B_EV_T` (CODATA-2018). `KB_EV`/`resolve_kt` are reused from `SCEMonteCarlo`, never redefined |
 | `src/problem.jl` | `LLGProblem` (Hamiltonian + per-site `magmom`/`alpha`/`g` + `b_ext`; prefactor `pref` and Zeeman gradient `gzee` resolved at construction; scalar / per-atom / per-site parameter resolution via `site_atom`), `SCEMonteCarlo.total_energy(::LLGProblem, config)` = SCE + Zeeman |
 | `src/integrators.jl` | `DepondtMertens` (rotation Heun, norm-exact, default), `HeunProjected` (independent cross-check); `_omega` / `_rotate` / `_step!` |
-| `src/run.jl` | `run_llg` driver (fixed step; measurements at step 0, every `measure_interval`, and always at the final step) + `LLGResult`; user observables — the SAME `SCEMonteCarlo.Observable(name, ncomp, f)` definitions the MC drivers accept (`f(config, energy, H)`, fed the **SCE** energy so a definition measures identically in both packages) — recorded as `ncomp × n_measurements` time-series matrices in `LLGResult.series` |
+| `src/run.jl` | `run_llg` driver (fixed step; measurements at step 0, every `measure_interval`, and always at the final step) + `LLGResult`; user observables — the SAME `SCEMonteCarlo.Observable(name, ncomp, f)` definitions the MC drivers accept (`f(config, energy, H)`, fed the **SCE** energy so a definition measures identically in both packages) — recorded as `ncomp × n_measurements` time-series matrices in `LLGResult.series`; the shared stepping loop `_llg_loop!` (also the resume entry) |
+| `src/checkpoint.jl` | JLD2 checkpoint/resume (schema below) — `run_llg(...; checkpoint, checkpoint_interval)` writer + `resume(path, prob::LLGProblem)` (a method of `SCEMonteCarlo.resume`, re-exported) |
 
 ## Conventions and invariants
 
@@ -95,10 +96,35 @@ quadrature at α = 1.0 AND α = 0.5 (α-independence — a wrong `(1+α²)` is a
 cross-package gate: sLLG ≡ `run_mc` Metropolis equilibrium (⟨E⟩, ⟨e₁·e₂⟩ at 3σ
 with τ_int-aware errors on both sides) on the dimer.
 
+## Checkpoint / resume (implemented)
+
+`run_llg(...; checkpoint = path, checkpoint_interval = n)` writes a plain-data
+JLD2 file (schema v1, `kind = "llg"`; the sibling's format discipline — named
+groups of Int/Float64/UInt64/String arrays, no Julia struct reconstruction,
+atomic temp-file + `mv`) every `n` steps (`0` ⇒ completion only) and always at
+completion. Because the noise is a stateless pure function of `(seed, site,
+step)`, **no RNG state is stored**: the file carries the model fingerprint
+(`SCEMonteCarlo.model_fingerprint`, the shared identity check), the
+trajectory-defining parameters (problem arrays, `dt`, `nsteps`,
+`measure_interval`, `renorm_interval`, integrator name, `kT`, `seed`), the
+observable names/ncomps, the completed `step`, the bitwise configuration, and
+the measurements recorded so far.
+
+`resume(path, prob; observables, nsteps, …)` — a method of
+`SCEMonteCarlo.resume` — validates everything, restores the configuration
+**verbatim** (never through `from_matrix`, whose renormalization would perturb a
+chaotic trajectory by ULPs), and continues the shared loop: bit-identical to the
+uninterrupted run. A completed file reconstructs its `LLGResult` without
+stepping (idempotent in retry loops). Since every per-step effect is keyed by
+the absolute step index, `nsteps` may also *extend* the run — bit-identical to a
+single longer run — refused only when a completed run's off-grid final
+measurement would not be a prefix of the longer trace. Gates:
+`test_checkpoint.jl` (crash-shaped mid-run files via a throwing observable,
+extension ≡ uninterrupted, `==` throughout).
+
 ## Planned
 
 - Seams kept open: integrator dispatch (`_step!`), additive torque terms beyond
   energy gradients (STT/SOT), observable callback at stride, `NoiseModel`.
-- JLD2 checkpoint/resume (stateless noise ⇒ carries only seed + step + config).
 - Later: S(q,ω) from trajectory dumps, GNEB, Mentink SIB, adaptive dt, GPU
   (needs the device ∇Z in SCEMonteCarlo — its phase 2).

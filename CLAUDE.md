@@ -61,6 +61,18 @@ equation, unit system, and the settled stochastic-LLG design.
   contract); `philox_block`/`philox_normal2` are the public facade pinned by the
   Random123 known-answer test upstream. Change the layout and seeded
   trajectories change (breaking-note territory, the P6 scope).
+- **Checkpoint writer ↔ reader ↔ the absolute-step purity of `_llg_loop!`**
+  (`checkpoint.jl`, `run.jl`): resume bit-identity rests on every per-step
+  effect being a pure function of the absolute step index — the Philox counter
+  (`_noise_ctrs(site, step)`), the renorm cadence (`step % renorm_interval`),
+  and the measurement grid (`step % mi`, plus the final step). Introduce ANY
+  carried-over per-step state (an accumulated time, a cached field, a stage
+  seed) and the checkpoint schema must grow to carry it (schema-version bump).
+  The configuration is restored **verbatim** (`_config_verbatim`) — never
+  `from_matrix`, whose renormalization ULP-perturbs chaotic trajectories (the
+  bug the crash-resume gate in `test_checkpoint.jl` caught). The model identity
+  is `SCEMonteCarlo.model_fingerprint` (upstream public facade — its mixing is
+  part of this file format too).
 - **`equilibrium_stats` ↔ SCEMonteCarlo's `_finalize_stats`**: `stats.jl`
   deliberately parallels the MC finalization (bin size
   `max(1, fld(kept, nbins))`, jackknife over `bin_means`, the

@@ -21,6 +21,7 @@ integrators consume no RNG and are bit-reproducible for any `ntasks`
 """
 module SCESpinDynamics
 
+using JLD2: jldopen
 using LinearAlgebra: norm, dot, cross
 using StaticArrays
 using Statistics: mean
@@ -29,14 +30,16 @@ using SCEMonteCarlo: SpinConfig, site_atom, energy_gradient!
 using SCEMonteCarlo: resolve_kt, philox_block, philox_normal2
 using SCEMonteCarlo: Evaluable, ObservableStat, standard_evaluables
 using SCEMonteCarlo: LogBinner, BinStore, bin_means, jackknife, std_error, tau_int
+using SCEMonteCarlo: model_fingerprint, resume
 
 export HBAR_EV_FS, MU_B_EV_T
 export LLGProblem, run_llg, LLGResult
 export DepondtMertens, HeunProjected
 export equilibrium_stats
 # Re-exported from SCEMonteCarlo (the same bindings — observable/evaluable
-# definitions written for the MC drivers plug into this package unchanged).
-export Observable, Evaluable
+# definitions written for the MC drivers plug into this package unchanged, and
+# `resume` gains an `LLGProblem` method here).
+export Observable, Evaluable, resume
 public AbstractIntegrator
 
 include("units.jl")
@@ -44,6 +47,7 @@ include("problem.jl")
 include("integrators.jl")
 include("noise.jl")
 include("run.jl")
+include("checkpoint.jl")
 include("stats.jl")
 
 end # module SCESpinDynamics

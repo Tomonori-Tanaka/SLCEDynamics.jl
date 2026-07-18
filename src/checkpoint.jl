@@ -1,0 +1,251 @@
+# Checkpoint / resume for `run_llg`, following the sibling's format discipline
+# (SCEMonteCarlo `checkpoint.jl` / `docs/specs/checkpoint-schema.md`): the file
+# holds ONLY plain data (Int/Float64/UInt64/String and arrays thereof, in named
+# JLD2 groups) — no Julia struct reconstruction — and writes are atomic (temp
+# file + `mv`). The LLG format is far smaller than the MC one because the noise
+# is a stateless pure function of `(seed, site, step)`: NO RNG state is stored;
+# `seed` + the completed `step` + the configuration reproduce the continuation
+# bit-exactly. That statelessness also permits *extending* a run: continuing to a
+# larger `nsteps` is bit-identical to an uninterrupted longer run.
+
+const _CKPT_SCHEMA_LLG = 1
+
+# The run-side writer state: target path, write cadence, and the cached model
+# fingerprint (SCEMonteCarlo's stable FNV-1a, the shared identity check).
+mutable struct _LLGCheckpointer
+    const path::String
+    const interval::Int         # steps between periodic writes; 0 ⇒ completion-only
+    since::Int
+    const fingerprint::UInt64
+end
+
+function _make_llg_checkpointer(path::Union{Nothing,AbstractString},
+                                interval::Integer, prob::LLGProblem)
+    path === nothing && return nothing
+    interval >= 0 ||
+        throw(ArgumentError("checkpoint_interval must be ≥ 0; got $interval"))
+    return _LLGCheckpointer(String(path), Int(interval), 0,
+                            model_fingerprint(prob.H))
+end
+
+_integrator_name(::DepondtMertens)::String = "DepondtMertens"
+_integrator_name(::HeunProjected)::String = "HeunProjected"
+
+function _integrator_from_name(name::String)::AbstractIntegrator
+    name == "DepondtMertens" && return DepondtMertens()
+    name == "HeunProjected" && return HeunProjected()
+    error("unknown integrator \"$name\" in the checkpoint (written by a newer " *
+          "package version?)")
+end
+
+# Bitwise configuration restore. Deliberately NOT `SCEMonteCarlo.from_matrix`,
+# which renormalizes each column: an ULP-level perturbation of the state forks a
+# chaotic trajectory, and resume must be bit-identical to the uninterrupted run.
+function _config_verbatim(m::Matrix{Float64}, n::Int)::SpinConfig
+    size(m) == (3, n) || error("checkpoint config is $(size(m, 1)) × " *
+                               "$(size(m, 2)); expected 3 × $n")
+    return SpinConfig([SVector{3,Float64}(m[1, s], m[2, s], m[3, s])
+                       for s = 1:n])
+end
+
+function _write_ckpt_llg(ck::_LLGCheckpointer, spec::_RunSpec, config::SpinConfig,
+                         tr::_Trace, step::Int)::Nothing
+    prob = spec.prob
+    k = tr.k
+    tmp = ck.path * ".tmp." * string(getpid())   # one writer per path assumed
+    jldopen(tmp, "w") do f
+        f["schema_version"] = _CKPT_SCHEMA_LLG
+        f["kind"] = "llg"
+        f["julia_version"] = string(VERSION)
+        f["package_version"] = string(pkgversion(SCESpinDynamics))
+        f["model_fingerprint"] = ck.fingerprint
+        f["checkpoint_interval"] = ck.interval
+        # trajectory-defining problem parameters (validated == on resume; the
+        # Hamiltonian itself is pinned by the fingerprint)
+        f["problem/magmom"] = prob.magmom
+        f["problem/alpha"] = prob.alpha
+        f["problem/g"] = prob.g
+        f["problem/b_ext"] = Vector{Float64}(prob.b_ext)
+        f["run/dt"] = spec.dt
+        f["run/nsteps"] = spec.nsteps
+        f["run/measure_interval"] = spec.measure_interval
+        f["run/renorm_interval"] = spec.renorm_interval
+        f["run/integrator"] = _integrator_name(spec.integrator)
+        f["run/kT"] = spec.kt                    # NaN ⇒ deterministic run
+        f["run/seed"] = spec.seed
+        f["run/observable_names"] = String[String(o.name) for o in spec.observables]
+        f["run/observable_ncomps"] = Int[o.ncomp for o in spec.observables]
+        f["progress/step"] = step
+        f["progress/nmeas"] = k
+        f["state/config"] = SCEMonteCarlo.to_matrix(config)
+        f["trace/times"] = tr.times[1:k]
+        f["trace/energies"] = tr.energies[1:k]
+        f["trace/mean_spins"] = Float64[tr.means[j][row] for row = 1:3, j = 1:k]
+        for o in spec.observables
+            f["trace/series/$(o.name)"] = tr.series[o.name][:, 1:k]
+        end
+    end
+    mv(tmp, ck.path; force = true)
+    return nothing
+end
+
+# Per-step tick (cadence) and the unconditional completion write. Writing
+# consumes no RNG (this package holds none) and never perturbs the trajectory.
+_ck_llg!(::Nothing, ::_RunSpec, ::SpinConfig, ::_Trace, ::Int, ::Bool) = nothing
+function _ck_llg!(ck::_LLGCheckpointer, spec::_RunSpec, config::SpinConfig,
+                  tr::_Trace, step::Int, final::Bool)::Nothing
+    if !final
+        ck.interval > 0 || return nothing
+        ck.since += 1
+        ck.since >= ck.interval || return nothing
+        ck.since = 0
+    end
+    _write_ckpt_llg(ck, spec, config, tr, step)
+    return nothing
+end
+
+"""
+    resume(path, prob::LLGProblem;
+           observables = Observable[], nsteps = nothing, ntasks = 1,
+           checkpoint = path, checkpoint_interval = nothing) -> LLGResult
+
+Continue a checkpointed [`run_llg`](@ref) from the state saved at `path` and
+return the **full** run's result — bit-identical to the uninterrupted run (the
+thermal noise is a stateless function of `(seed, site, step)`, so no RNG state
+exists to restore). Calling it on the checkpoint of a *completed* run
+reconstructs that run's `LLGResult` without stepping (idempotent — safe in a
+job-array retry loop).
+
+The caller re-supplies the `LLGProblem` and the observable *functions* (closures
+are not serialized); the checkpoint stores the model fingerprint, the problem
+parameters (`magmom`/`alpha`/`g`/`b_ext`, compared on active sites), and the
+observable names/component counts, and errors on any mismatch. Everything
+trajectory-defining (`dt`, `measure_interval`, `renorm_interval`, integrator,
+`kT`, `seed`) comes from the file and cannot be overridden.
+
+- `nsteps`: target total step count (default: the stored one). A value larger
+  than the stored `nsteps` **extends** the run — bit-identical to a single
+  uninterrupted run of that length. Extension past a completed run whose final
+  measurement was off the `measure_interval` grid is refused (its recorded
+  trace would not be a prefix of the longer run's).
+- `checkpoint` / `checkpoint_interval`: by default the resumed run keeps
+  checkpointing to the same `path` with the stored cadence (`checkpoint =
+  nothing` disables; `checkpoint_interval` overrides).
+"""
+function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
+        observables::Vector{Observable} = Observable[],
+        nsteps::Union{Nothing,Integer} = nothing,
+        ntasks::Integer = 1,
+        checkpoint::Union{Nothing,AbstractString} = path,
+        checkpoint_interval::Union{Nothing,Integer} = nothing)::LLGResult
+    isfile(path) || throw(ArgumentError("no checkpoint file at $path"))
+    ntasks >= 1 || throw(ArgumentError("ntasks must be ≥ 1; got $ntasks"))
+    H = prob.H
+    n = n_sites(H)
+    allunique(o.name for o in observables) ||
+        throw(ArgumentError("observable names must be unique"))
+    # Read and validate everything eagerly, closing the file before the long
+    # computation starts (the resumed run typically overwrites this very path).
+    data = jldopen(String(path), "r") do f
+        # kind before schema: an MC/PT file (schema v2 upstream) should say
+        # "wrong kind", not masquerade as a package-version mismatch
+        f["kind"] == "llg" || error(
+            "checkpoint kind \"$(f["kind"])\" is not an LLG run — MC/PT " *
+            "checkpoints resume via resume(path, H::TiledHamiltonian)")
+        f["schema_version"] == _CKPT_SCHEMA_LLG || error(
+            "checkpoint schema v$(f["schema_version"]) ≠ " *
+            "v$(_CKPT_SCHEMA_LLG) of this package version")
+        f["model_fingerprint"] == model_fingerprint(H) || error(
+            "checkpoint model fingerprint does not match this LLGProblem's " *
+            "Hamiltonian (different model, dims, or coefficients)")
+        mm = f["problem/magmom"]::Vector{Float64}
+        al = f["problem/alpha"]::Vector{Float64}
+        gf = f["problem/g"]::Vector{Float64}
+        bx = f["problem/b_ext"]::Vector{Float64}
+        length(mm) == n || error(
+            "checkpoint has $(length(mm)) sites; the Hamiltonian has $n")
+        # inactive entries are unvalidated placeholders — compare active only
+        (SVector{3,Float64}(bx) == prob.b_ext &&
+         all(!H.site_active[s] || (mm[s] == prob.magmom[s] &&
+                                   al[s] == prob.alpha[s] &&
+                                   gf[s] == prob.g[s]) for s = 1:n)) || error(
+            "the supplied LLGProblem's parameters (magmom/alpha/g/b_ext) do " *
+            "not match the checkpoint on active sites")
+        names = f["run/observable_names"]::Vector{String}
+        ncomps = f["run/observable_ncomps"]::Vector{Int}
+        (names == String[String(o.name) for o in observables] &&
+         ncomps == Int[o.ncomp for o in observables]) || error(
+            "the resumed observables (names/ncomps) do not match the " *
+            "checkpoint; stored: $names with $ncomps")
+        (; dt = f["run/dt"]::Float64, ns_stored = f["run/nsteps"]::Int,
+         mi = f["run/measure_interval"]::Int,
+         renorm = f["run/renorm_interval"]::Int,
+         integrator = _integrator_from_name(f["run/integrator"]::String),
+         kt = f["run/kT"]::Float64, seed = f["run/seed"]::UInt64,
+         step = f["progress/step"]::Int, k = f["progress/nmeas"]::Int,
+         config = _config_verbatim(f["state/config"]::Matrix{Float64}, n),
+         times = f["trace/times"]::Vector{Float64},
+         energies = f["trace/energies"]::Vector{Float64},
+         means = f["trace/mean_spins"]::Matrix{Float64},
+         series = Dict{Symbol,Matrix{Float64}}(
+             o.name => f["trace/series/$(o.name)"]::Matrix{Float64}
+             for o in observables),
+         stored_interval = f["checkpoint_interval"]::Int)
+    end
+    # a package-written file always satisfies these; fail cleanly on corruption
+    (data.mi >= 1 && data.renorm >= 0 && data.step >= 0 && data.k >= 1) || error(
+        "checkpoint run parameters are corrupted (measure_interval = " *
+        "$(data.mi), renorm_interval = $(data.renorm), step = $(data.step), " *
+        "nmeas = $(data.k))")
+    ns_t = nsteps === nothing ? data.ns_stored : Int(nsteps)
+    ns_t >= data.step || throw(ArgumentError(
+        "nsteps = $ns_t is smaller than the checkpoint's completed step " *
+        "$(data.step)"))
+    if isfinite(data.kt)
+        ns_t < 2^48 || throw(ArgumentError(
+            "nsteps must be < 2^48 (the noise-counter capacity); got $ns_t"))
+    end
+    # the trace must be a prefix of the target run's measurement grid: `k` grid
+    # measurements ≤ step, plus at most one off-grid final of a COMPLETED run
+    grid_k = 1 + div(data.step, data.mi)
+    if data.k == grid_k + 1
+        (data.step == data.ns_stored && data.step % data.mi != 0) || error(
+            "checkpoint trace is inconsistent ($(data.k) measurements at " *
+            "step $(data.step) with measure_interval $(data.mi))")
+        ns_t == data.step || throw(ArgumentError(
+            "cannot extend past step $(data.step): the completed run's final " *
+            "measurement at step $(data.step) is off the measurement grid " *
+            "(measure_interval = $(data.mi)), so its trace is not a prefix " *
+            "of the longer run's"))
+    else
+        data.k == grid_k || error(
+            "checkpoint trace is inconsistent ($(data.k) measurements at " *
+            "step $(data.step) with measure_interval $(data.mi))")
+    end
+
+    spec = _RunSpec(prob, data.integrator, data.dt, ns_t, data.mi, data.renorm,
+                    data.kt, data.seed, observables)
+    tr = _make_trace(spec)
+    copyto!(tr.times, 1, data.times, 1, data.k)
+    copyto!(tr.energies, 1, data.energies, 1, data.k)
+    for j = 1:data.k
+        tr.means[j] = SVector{3,Float64}(data.means[1, j], data.means[2, j],
+                                         data.means[3, j])
+    end
+    for o in observables
+        tr.series[o.name][:, 1:data.k] = data.series[o.name]
+    end
+    tr.k = data.k
+    config = data.config
+    # resuming a mid-run file to exactly its own step: the loop below is empty,
+    # so take the (off-grid) final measurement it would otherwise record
+    if ns_t == data.step && tr.k < _nmeas(ns_t, data.mi)
+        tr.k += 1
+        _measure!(tr.energies, tr.means, tr.series, observables, tr.k,
+                  ns_t * data.dt, tr.times, prob, config)
+    end
+    interval = checkpoint_interval === nothing ? data.stored_interval :
+               Int(checkpoint_interval)
+    ck = _make_llg_checkpointer(checkpoint, interval, prob)
+    return _llg_loop!(spec, config, tr, data.step, Int(ntasks), ck)
+end

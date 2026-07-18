@@ -39,11 +39,51 @@ function Base.show(io::IO, r::LLGResult)
           "$(length(r.times)) measurements, E_end = $(r.energies[end]))")
 end
 
+# The resolved, trajectory-defining parameters of one run (everything the
+# continuation of a checkpointed run must reproduce verbatim; execution details
+# like ntasks stay outside). `kt = NaN` marks a deterministic run.
+struct _RunSpec
+    prob::LLGProblem
+    integrator::AbstractIntegrator
+    dt::Float64
+    nsteps::Int
+    measure_interval::Int
+    renorm_interval::Int
+    kt::Float64
+    seed::UInt64
+    observables::Vector{Observable}
+end
+
+# The measurement record under construction: the LLGResult arrays plus the count
+# of columns filled so far (what a mid-run checkpoint persists).
+mutable struct _Trace
+    const times::Vector{Float64}
+    const energies::Vector{Float64}
+    const means::Vector{SVector{3,Float64}}
+    const series::Dict{Symbol,Matrix{Float64}}
+    k::Int
+end
+
+# measurement count of an `nsteps`-step run: step 0, every mi, plus the final
+# step when it is off the grid
+_nmeas(nsteps::Int, mi::Int)::Int =
+    1 + div(nsteps, mi) + (nsteps % mi == 0 ? 0 : 1)
+
+function _make_trace(spec::_RunSpec)::_Trace
+    nmeas = _nmeas(spec.nsteps, spec.measure_interval)
+    return _Trace(Vector{Float64}(undef, nmeas), Vector{Float64}(undef, nmeas),
+                  Vector{SVector{3,Float64}}(undef, nmeas),
+                  Dict{Symbol,Matrix{Float64}}(
+                      o.name => Matrix{Float64}(undef, o.ncomp, nmeas)
+                      for o in spec.observables), 0)
+end
+
 """
     run_llg(prob::LLGProblem, config0::SpinConfig; dt, nsteps,
             integrator = DepondtMertens(), observables = Observable[],
             temperature = nothing, kT = nothing, seed = nothing,
-            measure_interval = 10, ntasks = 1, renorm_interval = 1000)
+            measure_interval = 10, ntasks = 1, renorm_interval = 1000,
+            checkpoint = nothing, checkpoint_interval = 0)
         -> LLGResult
 
 Integrate the LLG for `nsteps` fixed steps of `dt` [fs] from `config0` (unit
@@ -81,6 +121,12 @@ matches the returned `config` exactly).
   length (`0` disables). Depondt–Mertens preserves norms to rounding, so this only
   caps the `~ε√nsteps` rounding walk of very long runs; `HeunProjected`
   renormalizes every step by construction.
+- `checkpoint`: a JLD2 path for crash-safe restart files (`nothing` disables).
+  With a path, a checkpoint is written every `checkpoint_interval` steps
+  (`0` ⇒ only at completion) and always once at completion; continue or reload
+  with [`resume`](@ref). The noise is a stateless pure function of
+  `(seed, site, step)`, so the file carries no RNG state — a resumed run is
+  bit-identical to the uninterrupted one. Writes are atomic (temp file + `mv`).
 
 A deterministic run consumes no RNG at all. Inactive sites stay bitwise frozen
 throughout (no noise, no Zeeman).
@@ -91,7 +137,9 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
                  temperature = nothing, kT = nothing,
                  seed::Union{Nothing,Integer} = nothing,
                  measure_interval::Integer = 10, ntasks::Integer = 1,
-                 renorm_interval::Integer = 1000)::LLGResult
+                 renorm_interval::Integer = 1000,
+                 checkpoint::Union{Nothing,AbstractString} = nothing,
+                 checkpoint_interval::Integer = 0)::LLGResult
     H = prob.H
     n = n_sites(H)
     length(config0) == n || throw(DimensionMismatch(
@@ -115,11 +163,10 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
     dtf = Float64(dt)
     ns = Int(nsteps)
     mi = Int(measure_interval)
-    sc = _LLGScratch(n)
 
     # thermostat resolution (sLLG when a temperature is given)
     thermo = !(temperature === nothing && kT === nothing)
-    local kt::Float64, seed_u::UInt64, sigma::Vector{Float64}
+    local kt::Float64, seed_u::UInt64
     if thermo
         kts = resolve_kt(temperature, kT)
         length(kts) == 1 || throw(ArgumentError(
@@ -136,38 +183,55 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
         seed === nothing || seed >= 0 ||
             throw(ArgumentError("seed must be ≥ 0; got $seed"))
         seed_u = seed === nothing ? rand(UInt64) : UInt64(seed)
-        sigma = _sigma_noise(prob, kt, dtf)
     else
         seed === nothing || throw(ArgumentError(
             "seed is only meaningful with a thermostat (pass temperature or kT)"))
         kt = NaN
         seed_u = 0
-        sigma = Float64[]
     end
-    # measurement steps: 0, mi, 2mi, …, plus the final step when not on the grid
-    nmeas = 1 + div(ns, mi) + (ns % mi == 0 ? 0 : 1)
-    times = Vector{Float64}(undef, nmeas)
-    energies = Vector{Float64}(undef, nmeas)
-    means = Vector{SVector{3,Float64}}(undef, nmeas)
-    series = Dict{Symbol,Matrix{Float64}}(
-        o.name => Matrix{Float64}(undef, o.ncomp, nmeas) for o in observables)
-    k = 1
-    _measure!(energies, means, series, observables, 1, 0.0, times, prob, config)
-    for step = 1:ns
-        thermo && _fill_noise!(sc.gth, H, sigma, seed_u, step)
-        _step!(integrator, config, prob, dtf, sc, Int(ntasks))
-        if renorm_interval > 0 && step % renorm_interval == 0
+    spec = _RunSpec(prob, integrator, dtf, ns, mi, Int(renorm_interval), kt,
+                    seed_u, observables)
+    ck = _make_llg_checkpointer(checkpoint, checkpoint_interval, prob)
+    tr = _make_trace(spec)
+    tr.k = 1
+    _measure!(tr.energies, tr.means, tr.series, observables, 1, 0.0, tr.times,
+              prob, config)
+    return _llg_loop!(spec, config, tr, 0, Int(ntasks), ck)
+end
+
+# The stepping loop from `step0` (already applied) to `spec.nsteps`, shared by
+# `run_llg` and `resume`. `tr` holds the measurements up to and including step
+# `step0`'s grid position; bit-identity of a resumed run rests on every per-step
+# effect being a pure function of the absolute step index (the Philox noise
+# counter, the renormalization cadence, the measurement grid).
+# (`ck` is `nothing` or a `_LLGCheckpointer` — defined in checkpoint.jl, which
+# is included after this file, so the annotation stays off.)
+function _llg_loop!(spec::_RunSpec, config::SpinConfig, tr::_Trace, step0::Int,
+                    ntasks::Int, ck)::LLGResult
+    prob = spec.prob
+    H = prob.H
+    sc = _LLGScratch(n_sites(H))
+    thermo = isfinite(spec.kt)
+    sigma = thermo ? _sigma_noise(prob, spec.kt, spec.dt) : Float64[]
+    ns = spec.nsteps
+    mi = spec.measure_interval
+    for step = (step0 + 1):ns
+        thermo && _fill_noise!(sc.gth, H, sigma, spec.seed, step)
+        _step!(spec.integrator, config, prob, spec.dt, sc, ntasks)
+        if spec.renorm_interval > 0 && step % spec.renorm_interval == 0
             _renormalize_active!(H, config)
         end
         if step % mi == 0 || step == ns
-            k += 1
+            tr.k += 1
             # time = step count × dt, never accumulated
-            _measure!(energies, means, series, observables, k, step * dtf, times,
-                      prob, config)
+            _measure!(tr.energies, tr.means, tr.series, spec.observables, tr.k,
+                      step * spec.dt, tr.times, prob, config)
         end
+        _ck_llg!(ck, spec, config, tr, step, false)
     end
-    return LLGResult(times, energies, means, series, config, ns, dtf, mi,
-                     kt, seed_u, H.n_active)
+    _ck_llg!(ck, spec, config, tr, ns, true)      # the completion write
+    return LLGResult(tr.times, tr.energies, tr.means, tr.series, config, ns,
+                     spec.dt, mi, spec.kt, spec.seed, H.n_active)
 end
 
 # One measurement row: the SCE energy is computed once and shared by the

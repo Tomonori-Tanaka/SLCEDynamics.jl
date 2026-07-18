@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- JLD2 checkpoint/resume: `run_llg(...; checkpoint, checkpoint_interval)` writes
+  plain-data, atomically-replaced restart files (schema v1, model fingerprint via
+  the new `SCEMonteCarlo.model_fingerprint` facade); `resume(path, prob)` — a
+  method of `SCEMonteCarlo.resume`, re-exported — continues bit-identically to
+  the uninterrupted run (the stateless noise needs no stored RNG state), returns
+  a completed file's `LLGResult` without stepping, and can *extend* a run via
+  `nsteps` (bit-identical to a single longer run; refused when a completed
+  off-grid final measurement would break trace prefixing). The configuration is
+  restored verbatim — never through `from_matrix`, whose renormalization would
+  ULP-perturb chaotic trajectories.
 - Stochastic LLG: `run_llg(...; temperature/kT, seed)` adds the thermal field
   `G_th = σ·ξ`, `σ = √(2 α kB T ħ magmom/(g Δt))` (the FDT amplitude of the
   (1+α²)-prefactored parametrization — no `(1+α²)`), one draw per site and step

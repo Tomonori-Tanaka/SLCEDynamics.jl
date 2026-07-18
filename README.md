@@ -24,8 +24,13 @@ Atomistic spin dynamics (Landau–Lifshitz–Gilbert) for fitted spin-cluster-ex
   MC drivers.
 - Bit-reproducible for any `ntasks`; deterministic runs consume no RNG (the
   `SCEMonteCarlo` P6 discipline).
+- **Checkpoint/resume**: `run_llg(...; checkpoint = "run.jld2",
+  checkpoint_interval = 50_000)` writes atomic plain-data JLD2 restart files;
+  `resume(path, prob)` continues (or, via `nsteps`, *extends*) the run
+  bit-identically to an uninterrupted one — the stateless noise means no RNG
+  state is ever stored.
 
-Planned next: JLD2 checkpointing, S(q,ω), GNEB, SIB. See `SPEC.md`.
+Planned next: S(q,ω), GNEB, SIB, GPU. See `SPEC.md`.
 
 ## Quick start
 
