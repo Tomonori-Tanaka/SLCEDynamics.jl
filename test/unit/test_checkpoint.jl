@@ -4,6 +4,26 @@
 # noise counter, the renormalization cadence, the measurement grid) — these
 # tests pin that end to end through genuine crash-shaped mid-run files.
 
+using JLD2: JLD2, jldopen
+
+# v2 rewriter: drop the v3 fields, stamp schema 2 (the back-read fixture; the
+# v1 twin lives in test_gpu_llg.jl)
+function _ckpt_rewrite_v2!(fout, fin, k)
+    if k == "schema_version"
+        fout[k] = 2
+    elseif k == "run/thermostat" || startswith(k, "run/filter") ||
+           k == "state/filter"
+        # dropped in v2
+    elseif fin[k] isa JLD2.Group
+        for kk in keys(fin[k])
+            _ckpt_rewrite_v2!(fout, fin, k * "/" * kk)
+        end
+    else
+        fout[k] = fin[k]
+    end
+    return nothing
+end
+
 function _assert_same_llg(a::LLGResult, b::LLGResult)
     @test a.times == b.times
     @test a.energies == b.energies
@@ -176,5 +196,119 @@ end
                                           checkpoint_interval = -1)
         @test_throws ArgumentError resume(path, prob; observables = obs,
                                           ntasks = 0)
+    end
+
+    @testset "quantum thermostat (schema v3)" begin
+        kwq = (; dt = 0.02, kT = 0.02, seed = 5, measure_interval = 7,
+               observables = obs, renorm_interval = 100,
+               thermostat = SD.QuantumThermostat())
+        path = joinpath(dir, "qt.jld2")
+        a = run_llg(prob, c0; kwq..., nsteps = 1000)
+        b = run_llg(prob, c0; kwq..., nsteps = 1000, checkpoint = path,
+                    checkpoint_interval = 137)
+        _assert_same_llg(a, b)
+        @test b.thermostat == "quantum"
+        jldopen(path, "r") do f
+            @test f["schema_version"] == 3
+            @test f["run/thermostat"] == "quantum"
+            @test f["run/filter_id"] == SD._QT_FILTER_ID
+            @test size(f["run/filter/coeffs"]::Matrix{Float64}) == (5, 1)
+            @test size(f["state/filter"]::Matrix{Float64}) ==
+                  (6, MC.n_sites(H))
+        end
+        c = resume(path, prob; observables = obs)     # completed → no stepping
+        _assert_same_llg(a, c)
+        @test c.thermostat == "quantum"
+
+        # crash-shaped mid-run file resumes bit-identically
+        cpath = joinpath(dir, "qt_crash.jld2")
+        nmeas = Ref(0)
+        boom = Observable(:e12, 1, (c, E, h) -> begin
+                              nmeas[] += 1
+                              nmeas[] > 80 && error("boom")
+                              dot(c[1], c[2])
+                          end)
+        @test_throws ErrorException run_llg(prob, c0; kwq..., nsteps = 1000,
+                                            observables = [boom, obs[2]],
+                                            checkpoint = cpath,
+                                            checkpoint_interval = 137)
+        d = resume(cpath, prob; observables = obs)
+        _assert_same_llg(a, d)
+
+        # extension ≡ single uninterrupted longer run (mi = 10 keeps step 300
+        # on the measurement grid — the extension precondition)
+        epath = joinpath(dir, "qt_ext.jld2")
+        run_llg(prob, c0; kwq..., measure_interval = 10, nsteps = 300,
+                checkpoint = epath)
+        long = run_llg(prob, c0; kwq..., measure_interval = 10, nsteps = 900)
+        ext = resume(epath, prob; observables = obs, nsteps = 900)
+        _assert_same_llg(long, ext)
+        @test ext.thermostat == "quantum"
+
+        # a classical v3 file records the thermostat and stays classical
+        clpath = joinpath(dir, "qt_classical.jld2")
+        run_llg(prob, c0; kw..., nsteps = 100, checkpoint = clpath)
+        jldopen(clpath, "r") do f
+            @test f["schema_version"] == 3
+            @test f["run/thermostat"] == "classical"
+            @test !haskey(f, "state/filter")
+        end
+        @test resume(clpath, prob; observables = obs).thermostat == "classical"
+
+        # the GPU resume refuses a quantum file (Q-M3 pending)
+        gH = MC.GPUTiledHamiltonian(SD.KernelAbstractions.CPU(), H)
+        err = try
+            resume(path, prob, gH; observables = obs)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ErrorException && occursin("quantum", err.msg)
+
+        # v2 rewrite of a classical v3 file back-reads as classical
+        v2path = joinpath(dir, "qt_v2.jld2")
+        jldopen(clpath, "r") do fin
+            jldopen(v2path, "w") do fout
+                for k in keys(fin)
+                    _ckpt_rewrite_v2!(fout, fin, k)
+                end
+            end
+        end
+        e2 = resume(v2path, prob; observables = obs)
+        @test e2.thermostat == "classical"
+        _assert_same_llg(resume(clpath, prob; observables = obs), e2)
+
+        # writer/reader round-trip of a NON-ZERO filter state: the identity
+        # placeholder keeps run-produced states at exact zero, so pin the
+        # state/coefficient layout directly with a nontrivial filter
+        sections = [SD._Biquad(0.8, 0.3, -0.1, -0.5, 0.06),
+                    SD._Biquad(1.1, -0.2, 0.05, -0.9, 0.25)]
+        Anb, Bnb, _, _ = SD._filter_state_space(sections)
+        filt = SD.ColoredNoiseFilter(sections,
+            SD._stationary_sqrt(SD._stationary_cov(Anb, Bnb)))
+        n = MC.n_sites(H)
+        x = reshape(collect(1.0:(12.0 * n)), 12, n)
+        fstate = SD._FilterState(filt, x)
+        spec = SD._RunSpec(prob, DepondtMertens(), 0.02, 10, 7, 100, 0.02,
+                           UInt64(5), obs, :cpu, "", 0,
+                           SD.QuantumThermostat())
+        tr = SD._make_trace(spec)
+        tr.k = 1
+        SD._measure!(tr.energies, tr.means, tr.series, obs, 1, 0.0, tr.times,
+                     prob, c0)
+        rpath = joinpath(dir, "qt_roundtrip.jld2")
+        ck = SD._make_llg_checkpointer(rpath, 0, prob)
+        SD._write_ckpt_llg(ck, spec, c0, tr, 7, fstate)
+        data = SD._read_llg_ckpt(rpath, prob, obs)
+        @test data.thermostat == "quantum"
+        @test data.filter_id == SD._QT_FILTER_ID
+        @test data.filter_coeffs == SD._filter_coeffs(filt)
+        @test data.filter_state == x
+        filt2 = SD._filter_from_coeffs(data.filter_coeffs)
+        @test filt2.sections == filt.sections
+        @test SD._filter_state_verbatim(data.filter_state, 12, n) == x
+        # dimension guards
+        @test_throws ErrorException SD._filter_state_verbatim(x, 6, n)
+        @test_throws ErrorException SD._filter_from_coeffs(zeros(4, 2))
     end
 end

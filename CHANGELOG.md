@@ -20,8 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   allow_evaluables)` refusing Boltzmann fluctuation evaluables on quantum
   runs. **The filter is currently the identity placeholder** — a
   `QuantumThermostat()` run is bitwise classical until the pinned
-  Barker–Bauer fit constants land (Q-M4); quantum runs refuse checkpointing
-  until schema v3 (Q-M2); the GPU path takes no thermostat kwarg yet (Q-M3).
+  Barker–Bauer fit constants land (Q-M4); the GPU path takes no thermostat
+  kwarg yet (Q-M3).
+- Quantum thermostat, milestone 2 (checkpoint schema v3): `run/thermostat`
+  (always written), quantum-only `run/filter_id` (provenance),
+  `run/filter/coeffs` (authoritative — resume rebuilds the recurrence from
+  the stored coefficients verbatim, never from current package constants)
+  and `state/filter` (bitwise restore, the `_config_verbatim` twin);
+  v1/v2 files back-read as classical; quantum checkpoint/crash-resume/
+  extension are bit-identical; the GPU `resume` refuses quantum files
+  until Q-M3.
 
 - GPU LLG/sLLG (`run_llg_gpu`, public unexported pending the A100 go/no-go;
   decision record `docs/specs/gpu-llg.md`): both integrators on a

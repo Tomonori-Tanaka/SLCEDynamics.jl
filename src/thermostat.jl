@@ -20,6 +20,13 @@
 const _QT_MAX_TAU = 0.1
 const _QT_MAX_NSECTIONS = 8
 
+# Provenance tag of the shipped filter constants, stored in quantum checkpoints
+# (schema v3). Informational only — resume rebuilds the recurrence from the
+# STORED coefficients, never from this package's constants, so a re-fit bumps
+# this tag without invalidating old files. "identity-v0" is the Q-M1/Q-M4
+# wiring placeholder.
+const _QT_FILTER_ID = "identity-v0"
+
 """
     ClassicalThermostat()
 
@@ -193,6 +200,42 @@ end
 struct _FilterState
     filter::ColoredNoiseFilter
     x::Matrix{Float64}
+end
+
+# Checkpoint (schema v3) coefficient snapshot: column j = (b0, b1, b2, a1, a2)
+# of section j — the AUTHORITATIVE record a resume rebuilds the recurrence
+# from (coupled site: the reader `_filter_from_coeffs` and the schema doc).
+function _filter_coeffs(filt::ColoredNoiseFilter)::Matrix{Float64}
+    ns = length(filt.sections)
+    coeffs = Matrix{Float64}(undef, 5, ns)
+    for (j, bq) in enumerate(filt.sections)
+        coeffs[:, j] .= (bq.b0, bq.b1, bq.b2, bq.a1, bq.a2)
+    end
+    return coeffs
+end
+
+# Rebuild the stepping filter from stored coefficients, verbatim. `L` is the
+# init-only stationary square root and a resumed run never re-initializes, so
+# the rebuilt filter carries a zero placeholder — it must never reach
+# `_init_filter_state`.
+function _filter_from_coeffs(coeffs::Matrix{Float64})::ColoredNoiseFilter
+    size(coeffs, 1) == 5 || error(
+        "checkpoint filter coefficients are $(size(coeffs, 1)) × " *
+        "$(size(coeffs, 2)); expected 5 rows")
+    sections = [_Biquad(coeffs[1, j], coeffs[2, j], coeffs[3, j], coeffs[4, j],
+                        coeffs[5, j]) for j = 1:size(coeffs, 2)]
+    m = 2 * length(sections)
+    return ColoredNoiseFilter(sections, zeros(m, m))
+end
+
+# Bitwise filter-state restore — the `_config_verbatim` twin (never rebuild,
+# never renormalize: resume must be bit-identical to the uninterrupted run).
+function _filter_state_verbatim(m::Matrix{Float64}, nlanes::Int,
+                                n::Int)::Matrix{Float64}
+    size(m) == (nlanes, n) || error(
+        "checkpoint filter state is $(size(m, 1)) × $(size(m, 2)); expected " *
+        "$nlanes × $n")
+    return copy(m)
 end
 
 # Counter for the quantum-thermostat slots (same word layout as `_noise_ctrs`;

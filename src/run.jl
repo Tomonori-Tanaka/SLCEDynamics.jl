@@ -152,7 +152,9 @@ matches the returned `config` exactly).
   With a path, a checkpoint is written every `checkpoint_interval` steps
   (`0` ⇒ only at completion) and always once at completion; continue or reload
   with [`resume`](@ref). The noise is a stateless pure function of
-  `(seed, site, step)`, so the file carries no RNG state — a resumed run is
+  `(seed, site, step)`, so the file carries no RNG state (a quantum
+  thermostat's filter state is the one carried array, stored verbatim) — a
+  resumed run is
   bit-identical to the uninterrupted one. Writes are atomic (temp file + `mv`).
 
 A deterministic run consumes no RNG at all. Inactive sites stay bitwise frozen
@@ -228,9 +230,6 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
             "$(round(_QT_MAX_TAU * HBAR_EV_FS / kt; sigdigits = 3)) fs at this " *
             "temperature (dt ≤ $(round(0.05 * HBAR_EV_FS / kt; sigdigits = 3)) " *
             "fs recommended)"))
-        checkpoint === nothing || throw(ArgumentError(
-            "checkpointing a quantum-thermostat run is not supported yet " *
-            "(requires checkpoint schema v3 — pending)"))
         fstate = _init_filter_state(_build_quantum_filter(kt, dtf), H, seed_u)
     else
         fstate = nothing
@@ -283,9 +282,9 @@ function _llg_loop!(spec::_RunSpec, config::SpinConfig, tr::_Trace, step0::Int,
             _measure!(tr.energies, tr.means, tr.series, spec.observables, tr.k,
                       step * spec.dt, tr.times, prob, config)
         end
-        _ck_llg!(ck, spec, config, tr, step, false)
+        _ck_llg!(ck, spec, config, tr, step, false, fstate)
     end
-    _ck_llg!(ck, spec, config, tr, ns, true)      # the completion write
+    _ck_llg!(ck, spec, config, tr, ns, true, fstate)   # the completion write
     return LLGResult(tr.times, tr.energies, tr.means, tr.series, config, ns,
                      spec.dt, mi, spec.kt, spec.seed, H.n_active,
                      _compute_string(spec), _thermostat_string(spec.thermostat))

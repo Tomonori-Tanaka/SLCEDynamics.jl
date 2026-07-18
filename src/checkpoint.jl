@@ -2,16 +2,22 @@
 # (SCEMonteCarlo `checkpoint.jl` / `docs/specs/checkpoint-schema.md`): the file
 # holds ONLY plain data (Int/Float64/UInt64/String and arrays thereof, in named
 # JLD2 groups) — no Julia struct reconstruction — and writes are atomic (temp
-# file + `mv`). The LLG format is far smaller than the MC one because the noise
-# is a stateless pure function of `(seed, site, step)`: NO RNG state is stored;
-# `seed` + the completed `step` + the configuration reproduce the continuation
-# bit-exactly. That statelessness also permits *extending* a run: continuing to a
-# larger `nsteps` is bit-identical to an uninterrupted longer run.
+# file + `mv`). No RNG state exists to store (the noise is a stateless pure
+# function of `(seed, site, step)`); the ONE piece of carried per-step state is
+# the quantum thermostat's filter state (`state/filter`, schema v3), restored
+# verbatim like the configuration. `seed` + the completed `step` + the state
+# arrays reproduce the continuation bit-exactly, and *extending* a run
+# (continuing to a larger `nsteps`) is bit-identical to an uninterrupted
+# longer run.
 
 # v2 adds the compute provenance (`run/compute`, `run/backend`,
 # `run/workgroupsize`) — trajectory-defining on the GPU path; v1 files are
-# back-read as `compute = "cpu"`.
-const _CKPT_SCHEMA_LLG = 2
+# back-read as `compute = "cpu"`. v3 adds the thermostat (`run/thermostat`,
+# always; quantum-only: `run/filter_id` — provenance, no refusal —
+# `run/filter/coeffs`, the AUTHORITATIVE 5 × NS biquad snapshot resume
+# rebuilds from verbatim, and `state/filter`); v1/v2 back-read as
+# `thermostat = "classical"`.
+const _CKPT_SCHEMA_LLG = 3
 
 # The run-side writer state: target path, write cadence, and the cached model
 # fingerprint (SCEMonteCarlo's stable FNV-1a, the shared identity check).
@@ -52,7 +58,8 @@ function _config_verbatim(m::Matrix{Float64}, n::Int)::SpinConfig
 end
 
 function _write_ckpt_llg(ck::_LLGCheckpointer, spec::_RunSpec, config::SpinConfig,
-                         tr::_Trace, step::Int)::Nothing
+                         tr::_Trace, step::Int,
+                         fstate::Union{Nothing,_FilterState})::Nothing
     prob = spec.prob
     k = tr.k
     tmp = ck.path * ".tmp." * string(getpid())   # one writer per path assumed
@@ -79,6 +86,12 @@ function _write_ckpt_llg(ck::_LLGCheckpointer, spec::_RunSpec, config::SpinConfi
         f["run/compute"] = String(spec.compute)
         f["run/backend"] = spec.backend_tag
         f["run/workgroupsize"] = spec.workgroupsize
+        f["run/thermostat"] = _thermostat_string(spec.thermostat)
+        if fstate !== nothing
+            f["run/filter_id"] = _QT_FILTER_ID
+            f["run/filter/coeffs"] = _filter_coeffs(fstate.filter)
+            f["state/filter"] = copy(fstate.x)
+        end
         f["run/observable_names"] = String[String(o.name) for o in spec.observables]
         f["run/observable_ncomps"] = Int[o.ncomp for o in spec.observables]
         f["progress/step"] = step
@@ -97,16 +110,18 @@ end
 
 # Per-step tick (cadence) and the unconditional completion write. Writing
 # consumes no RNG (this package holds none) and never perturbs the trajectory.
-_ck_llg!(::Nothing, ::_RunSpec, ::SpinConfig, ::_Trace, ::Int, ::Bool) = nothing
+_ck_llg!(::Nothing, ::_RunSpec, ::SpinConfig, ::_Trace, ::Int, ::Bool,
+         fstate = nothing) = nothing
 function _ck_llg!(ck::_LLGCheckpointer, spec::_RunSpec, config::SpinConfig,
-                  tr::_Trace, step::Int, final::Bool)::Nothing
+                  tr::_Trace, step::Int, final::Bool,
+                  fstate::Union{Nothing,_FilterState} = nothing)::Nothing
     if !final
         ck.interval > 0 || return nothing
         ck.since += 1
         ck.since >= ck.interval || return nothing
         ck.since = 0
     end
-    _write_ckpt_llg(ck, spec, config, tr, step)
+    _write_ckpt_llg(ck, spec, config, tr, step, fstate)
     return nothing
 end
 
@@ -134,7 +149,7 @@ function _read_llg_ckpt(path::AbstractString, prob::LLGProblem,
             "checkpoint kind \"$(f["kind"])\" is not an LLG run — MC/PT " *
             "checkpoints resume via resume(path, H::TiledHamiltonian)")
         ver = f["schema_version"]
-        ver in (1, 2) || error(
+        ver in (1, 2, 3) || error(
             "checkpoint schema v$(ver) is not readable by this package " *
             "version (knows v1–v$(_CKPT_SCHEMA_LLG))")
         f["model_fingerprint"] == model_fingerprint(H) || error(
@@ -167,6 +182,14 @@ function _read_llg_ckpt(path::AbstractString, prob::LLGProblem,
          compute = ver >= 2 ? f["run/compute"]::String : "cpu",
          backend_tag = ver >= 2 ? f["run/backend"]::String : "",
          workgroupsize = ver >= 2 ? f["run/workgroupsize"]::Int : 0,
+         thermostat = ver >= 3 ? f["run/thermostat"]::String : "classical",
+         # quantum-only groups; sentinel empties keep the tuple type uniform
+         filter_id = ver >= 3 && f["run/thermostat"] == "quantum" ?
+                     f["run/filter_id"]::String : "",
+         filter_coeffs = ver >= 3 && f["run/thermostat"] == "quantum" ?
+                         f["run/filter/coeffs"]::Matrix{Float64} : zeros(5, 0),
+         filter_state = ver >= 3 && f["run/thermostat"] == "quantum" ?
+                        f["state/filter"]::Matrix{Float64} : zeros(0, 0),
          step = f["progress/step"]::Int, k = f["progress/nmeas"]::Int,
          config = _config_verbatim(f["state/config"]::Matrix{Float64}, n),
          times = f["trace/times"]::Vector{Float64},
@@ -249,7 +272,8 @@ end
 Continue a checkpointed [`run_llg`](@ref) from the state saved at `path` and
 return the **full** run's result — bit-identical to the uninterrupted run (the
 thermal noise is a stateless function of `(seed, site, step)`, so no RNG state
-exists to restore). Calling it on the checkpoint of a *completed* run
+exists to restore; a quantum run's filter state is restored verbatim).
+Calling it on the checkpoint of a *completed* run
 reconstructs that run's `LLGResult` without stepping (idempotent — safe in a
 job-array retry loop). A checkpoint written by `run_llg_gpu` is refused here —
 resume it with the `resume(path, prob, gH)` method.
@@ -259,7 +283,11 @@ are not serialized); the checkpoint stores the model fingerprint, the problem
 parameters (`magmom`/`alpha`/`g`/`b_ext`, compared on active sites), and the
 observable names/component counts, and errors on any mismatch. Everything
 trajectory-defining (`dt`, `measure_interval`, `renorm_interval`, integrator,
-`kT`, `seed`) comes from the file and cannot be overridden.
+`kT`, `seed`, thermostat) comes from the file and cannot be overridden — a
+quantum-thermostat run's filter is rebuilt from the STORED discrete
+coefficients verbatim (never from the current package constants, so a future
+constants re-fit cannot change a resumed trajectory) and its filter state is
+restored bitwise alongside the configuration.
 
 - `nsteps`: target total step count (default: the stored one). A value larger
   than the stored `nsteps` **extends** the run — bit-identical to a single
@@ -283,14 +311,24 @@ function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
         "\"$(data.compute)\", workgroupsize = $(data.workgroupsize)) — resume " *
         "it with resume(path, prob, gH::GPUTiledHamiltonian; ...)")
     ns_t = _resume_target(data, nsteps)
-    # v1/v2 checkpoints are classical by construction (quantum runs refuse
-    # checkpointing until schema v3)
+    local fstate::Union{Nothing,_FilterState}
+    local th::AbstractThermostat
+    if data.thermostat == "quantum"
+        filt = _filter_from_coeffs(data.filter_coeffs)
+        nlanes = 6 * length(filt.sections)
+        fstate = _FilterState(filt, _filter_state_verbatim(data.filter_state,
+                                                           nlanes,
+                                                           n_sites(prob.H)))
+        th = QuantumThermostat()
+    else
+        fstate = nothing
+        th = ClassicalThermostat()
+    end
     spec = _RunSpec(prob, data.integrator, data.dt, ns_t, data.mi, data.renorm,
-                    data.kt, data.seed, observables, :cpu, "", 0,
-                    ClassicalThermostat())
+                    data.kt, data.seed, observables, :cpu, "", 0, th)
     tr, config = _resume_trace(spec, data, prob, observables)
     interval = checkpoint_interval === nothing ? data.stored_interval :
                Int(checkpoint_interval)
     ck = _make_llg_checkpointer(checkpoint, interval, prob)
-    return _llg_loop!(spec, config, tr, data.step, Int(ntasks), ck)
+    return _llg_loop!(spec, config, tr, data.step, Int(ntasks), ck, fstate)
 end

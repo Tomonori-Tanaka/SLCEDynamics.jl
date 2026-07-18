@@ -180,6 +180,10 @@ function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem, gH;
         throw(ArgumentError(
             "gH was built from a different Hamiltonian than prob.H"))
     data = _read_llg_ckpt(path, prob, observables)
+    data.thermostat == "classical" || error(
+        "this checkpoint is a quantum-thermostat run — the GPU path takes no " *
+        "thermostat yet (Q-M3 pending); resume it on the CPU with " *
+        "resume(path, prob; ...)")
     tag = _backend_tag(gH.backend)
     ws = workgroupsize === nothing ?
          (data.workgroupsize > 0 ? data.workgroupsize : 128) :

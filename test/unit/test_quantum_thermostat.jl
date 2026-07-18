@@ -233,11 +233,8 @@ end
         @test_throws ArgumentError run_llg(prob, cfg; dt = 1.0, nsteps = 10,
                                            kT = 0.5, seed = 1,
                                            thermostat = SD.QuantumThermostat())
-        # checkpointing a quantum run awaits schema v3
-        @test_throws ArgumentError run_llg(prob, cfg; dt = 1.0, nsteps = 10,
-                                           kT = 0.005, seed = 1,
-                                           thermostat = SD.QuantumThermostat(),
-                                           checkpoint = tempname() * ".jld2")
+        # checkpointing a quantum run works since schema v3 (gates live in
+        # test_checkpoint.jl's "quantum thermostat (schema v3)" testset)
         # classical runs are untouched by the kwarg's existence
         r = run_llg(prob, cfg; dt = 1.0, nsteps = 10, kT = 0.005, seed = 1,
                     thermostat = SD.ClassicalThermostat())

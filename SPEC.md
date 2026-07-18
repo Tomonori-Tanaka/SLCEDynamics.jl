@@ -106,8 +106,9 @@ JLD2 file (schema v1, `kind = "llg"`; the sibling's format discipline — named
 groups of Int/Float64/UInt64/String arrays, no Julia struct reconstruction,
 atomic temp-file + `mv`) every `n` steps (`0` ⇒ completion only) and always at
 completion. Because the noise is a stateless pure function of `(seed, site,
-step)`, **no RNG state is stored**: the file carries the model fingerprint
-(`SCEMonteCarlo.model_fingerprint`, the shared identity check), the
+step)`, **no RNG state is stored** (schema v3's quantum `state/filter` is
+the one carried array, restored verbatim): the file carries the model
+fingerprint (`SCEMonteCarlo.model_fingerprint`, the shared identity check), the
 trajectory-defining parameters (problem arrays, `dt`, `nsteps`,
 `measure_interval`, `renorm_interval`, integrator name, `kT`, `seed`), the
 observable names/ncomps, the completed `step`, the bitwise configuration, and
@@ -233,8 +234,12 @@ stays Markovian — the QTB approximation; occupations accurate ~1% for
 **Current status: the shipped filter is the identity placeholder** — a
 `QuantumThermostat()` run is bitwise the classical one (the milestone-1
 wiring gate) until the pinned fit constants land (Q-M4); the types stay
-public-unexported, quantum runs refuse checkpointing (schema v3 is Q-M2),
-and the GPU path takes no thermostat kwarg (Q-M3).
+public-unexported and the GPU path takes no thermostat kwarg (Q-M3).
+Checkpoint schema v3 (Q-M2, landed): `run/thermostat` always;
+quantum-only `run/filter_id` (provenance), `run/filter/coeffs`
+(authoritative — resume rebuilds from the stored coefficients verbatim),
+`state/filter` (bitwise restore); v1/v2 back-read as classical; GPU resume
+refuses quantum files until Q-M3.
 
 ## Planned
 
@@ -242,6 +247,6 @@ and the GPU path takes no thermostat kwarg (Q-M3).
   energy gradients (STT/SOT), observable callback at stride, `NoiseModel`
   (adaptive-QTB upgrade path), device-side observable reductions /
   async-overlap measurement.
-- Later: quantum-thermostat milestones Q-M2–Q-M4 (checkpoint v3, GPU kernel,
+- Later: quantum-thermostat milestones Q-M3–Q-M4 (GPU kernel,
   Barker–Bauer constants + physics gates), GNEB, Mentink SIB, adaptive dt,
   GPU S(q,ω), multi-GPU.
