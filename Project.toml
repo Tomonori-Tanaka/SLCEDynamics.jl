@@ -1,0 +1,32 @@
+name = "SCESpinDynamics"
+uuid = "c8b4d448-9eb4-4f46-b679-a22ccbe37b5a"
+version = "0.1.0"
+authors = ["T.Tanaka <tomonori.tanaka.academic@gmail.com>"]
+
+[deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+SCEFitting = "854eb3e0-bd75-4c3b-927c-573f5c6d8b1d"
+SCEMonteCarlo = "943eb04c-36cf-4255-b224-b95aac6c4036"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[compat]
+Aqua = "0.8"
+JET = "0.11"
+LinearAlgebra = "1"
+Random = "1"
+SCEFitting = "0.1"
+SCEMonteCarlo = "0.1"
+Spglib = "1.2"
+StaticArrays = "1.9"
+Test = "1"
+julia = "1.12"
+
+[extras]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Spglib = "f761d5c5-86db-4880-b97f-9680a7cccfb5"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test", "Aqua", "JET", "Random", "Spglib"]

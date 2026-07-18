@@ -1,0 +1,52 @@
+# ==== Julia ====
+# Coverage & profiling
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+/coverage/
+lcov.info
+
+# Environment: a library pins compat via Project.toml and does NOT commit its
+# Manifest. Comment the next line out for an application / reproducible-script
+# repo where you DO want the Manifest tracked.
+/Manifest.toml
+
+# Documenter build output
+/docs/build/
+/docs/Manifest.toml
+
+# Package build scratch
+deps/deps.jl
+deps/build.log
+deps/downloads/
+deps/usr/
+deps/src/
+
+# ==== Editors / OS ====
+.DS_Store
+.vscode/
+*.swp
+*~
+
+# ==== Large numerical outputs / data ====
+# Binary numeric dumps and datasets — keep these out of git.
+*.jld2
+*.jld
+*.h5
+*.hdf5
+*.bson
+*.npy
+*.npz
+*.arrow
+*.parquet
+*.mat
+
+# Generated results / scratch output directories (adjust per package).
+/output/
+/results/
+/scratch/
+/tmp/
+
+# Note: paper PDFs live under references/papers/ and are ignored there
+# (references/.gitignore). Commit doc figures intentionally; large *generated*
+# figures belong in one of the ignored output directories above.

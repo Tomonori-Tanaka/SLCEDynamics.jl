@@ -1,0 +1,3 @@
+# Copyrighted reference material (paper PDFs, books) — local only, never committed.
+papers/*
+!papers/.gitkeep
