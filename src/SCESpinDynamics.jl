@@ -23,20 +23,27 @@ module SCESpinDynamics
 
 using LinearAlgebra: norm, dot, cross
 using StaticArrays
+using Statistics: mean
 using SCEMonteCarlo: SCEMonteCarlo, TiledHamiltonian, n_sites, Observable
 using SCEMonteCarlo: SpinConfig, site_atom, energy_gradient!
+using SCEMonteCarlo: resolve_kt, philox_block, philox_normal2
+using SCEMonteCarlo: Evaluable, ObservableStat, standard_evaluables
+using SCEMonteCarlo: LogBinner, BinStore, bin_means, jackknife, std_error, tau_int
 
 export HBAR_EV_FS, MU_B_EV_T
 export LLGProblem, run_llg, LLGResult
 export DepondtMertens, HeunProjected
-# Re-exported from SCEMonteCarlo (the same binding — user observables written for
-# the MC drivers plug into `run_llg` unchanged).
-export Observable
+export equilibrium_stats
+# Re-exported from SCEMonteCarlo (the same bindings — observable/evaluable
+# definitions written for the MC drivers plug into this package unchanged).
+export Observable, Evaluable
 public AbstractIntegrator
 
 include("units.jl")
 include("problem.jl")
 include("integrators.jl")
+include("noise.jl")
 include("run.jl")
+include("stats.jl")
 
 end # module SCESpinDynamics

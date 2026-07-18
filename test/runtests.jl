@@ -11,6 +11,7 @@ const TEST_MODE = get(ENV, "TEST_MODE", "default")
         include("unit/test_two_spin.jl")
         include("unit/test_conservation.jl")
         include("unit/test_observables.jl")
+        include("unit/test_thermostat.jl")
     end
     if TEST_MODE in ("default", "all", "aqua")
         include("aqua.jl")

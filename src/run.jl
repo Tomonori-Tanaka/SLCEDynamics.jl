@@ -14,7 +14,10 @@ Fields:
 - `series::Dict{Symbol,Matrix{Float64}}` — one `ncomp × n_measurements` matrix
   per user observable (see `run_llg`'s `observables`), columns aligned with
   `times`,
-- `config` — the final configuration, plus the run parameters.
+- `config` — the final configuration, plus the run parameters. For a
+  thermostatted run, `kT` [eV] and the `seed` are recorded (`kT = NaN`,
+  `seed = 0` for a deterministic run); `n_active` is the active-site count
+  (what per-site [`equilibrium_stats`](@ref) evaluables normalize by).
 """
 struct LLGResult
     times::Vector{Float64}
@@ -25,24 +28,44 @@ struct LLGResult
     nsteps::Int
     dt::Float64
     measure_interval::Int
+    kT::Float64
+    seed::UInt64
+    n_active::Int
 end
 
 function Base.show(io::IO, r::LLGResult)
-    print(io, "LLGResult($(r.nsteps) steps, dt = $(r.dt) fs, ",
+    therm = isfinite(r.kT) ? ", kT = $(r.kT)" : ""
+    print(io, "LLGResult($(r.nsteps) steps, dt = $(r.dt) fs$(therm), ",
           "$(length(r.times)) measurements, E_end = $(r.energies[end]))")
 end
 
 """
     run_llg(prob::LLGProblem, config0::SpinConfig; dt, nsteps,
             integrator = DepondtMertens(), observables = Observable[],
+            temperature = nothing, kT = nothing, seed = nothing,
             measure_interval = 10, ntasks = 1, renorm_interval = 1000)
         -> LLGResult
 
-Integrate the deterministic (`T = 0`) LLG for `nsteps` fixed steps of `dt` [fs]
-from `config0` (unit vectors; not mutated). Observables are recorded at step 0,
-every `measure_interval` steps, and always at the final step (so the last
-measurement matches the returned `config` exactly).
+Integrate the LLG for `nsteps` fixed steps of `dt` [fs] from `config0` (unit
+vectors; not mutated) — deterministic (`T = 0`) by default, **stochastic LLG**
+when a temperature is given. Observables are recorded at step 0, every
+`measure_interval` steps, and always at the final step (so the last measurement
+matches the returned `config` exactly).
 
+- `temperature` [K] XOR `kT` [model energy units] (scalar; both omitted =
+  deterministic): switches on the thermal field `G_th,i = σ_i·ξ_i` with
+  `σ_i = √(2 α_i kB T ħ magmom_i/(g_i Δt))` — the fluctuation–dissipation
+  amplitude for this parametrization (no `(1+α²)`; see `noise.jl`). Requires
+  `α > 0` on every active site (noise scales with the damping; an undamped spin
+  never thermalizes). One Gaussian 3-vector per active site per step, shared by
+  both integrator stages (Stratonovich). To feed [`equilibrium_stats`](@ref)'s
+  default evaluables (specific heat &c.), record
+  `SCEMonteCarlo.standard_observables(prob.H)` here.
+- `seed`: the noise seed (thermostatted runs only; default: a fresh
+  `rand(UInt64)`, recorded in the result). Draws are keyed counter-based Philox
+  — the trajectory is a pure function of
+  (`prob`, `config0`, `dt`, `nsteps`, `integrator`, `seed`), no RNG state
+  exists, and results are bit-identical for any `ntasks`.
 - `integrator`: [`DepondtMertens`](@ref) (default) or [`HeunProjected`](@ref).
 - `observables`: a vector of `SCEMonteCarlo.Observable`s — the SAME definitions
   the Monte Carlo drivers accept (`Observable(name, ncomp, f)` with
@@ -59,12 +82,14 @@ measurement matches the returned `config` exactly).
   caps the `~ε√nsteps` rounding walk of very long runs; `HeunProjected`
   renormalizes every step by construction.
 
-Consumes no RNG: the trajectory is a pure function of (`prob`, `config0`, `dt`,
-`nsteps`, `integrator`). Inactive sites stay bitwise frozen throughout.
+A deterministic run consumes no RNG at all. Inactive sites stay bitwise frozen
+throughout (no noise, no Zeeman).
 """
 function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Integer,
                  integrator::AbstractIntegrator = DepondtMertens(),
                  observables::Vector{Observable} = Observable[],
+                 temperature = nothing, kT = nothing,
+                 seed::Union{Nothing,Integer} = nothing,
                  measure_interval::Integer = 10, ntasks::Integer = 1,
                  renorm_interval::Integer = 1000)::LLGResult
     H = prob.H
@@ -91,6 +116,34 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
     ns = Int(nsteps)
     mi = Int(measure_interval)
     sc = _LLGScratch(n)
+
+    # thermostat resolution (sLLG when a temperature is given)
+    thermo = !(temperature === nothing && kT === nothing)
+    local kt::Float64, seed_u::UInt64, sigma::Vector{Float64}
+    if thermo
+        kts = resolve_kt(temperature, kT)
+        length(kts) == 1 || throw(ArgumentError(
+            "run_llg takes a single temperature; got $(length(kts))"))
+        kt = kts[1]
+        for s = 1:n
+            H.site_active[s] || continue
+            prob.alpha[s] > 0 || throw(ArgumentError(
+                "stochastic LLG needs α > 0 on every active site (site $s has " *
+                "α = 0) — the thermal noise scales with the damping"))
+        end
+        ns < 2^48 || throw(ArgumentError(
+            "nsteps must be < 2^48 (the noise-counter capacity); got $ns"))
+        seed === nothing || seed >= 0 ||
+            throw(ArgumentError("seed must be ≥ 0; got $seed"))
+        seed_u = seed === nothing ? rand(UInt64) : UInt64(seed)
+        sigma = _sigma_noise(prob, kt, dtf)
+    else
+        seed === nothing || throw(ArgumentError(
+            "seed is only meaningful with a thermostat (pass temperature or kT)"))
+        kt = NaN
+        seed_u = 0
+        sigma = Float64[]
+    end
     # measurement steps: 0, mi, 2mi, …, plus the final step when not on the grid
     nmeas = 1 + div(ns, mi) + (ns % mi == 0 ? 0 : 1)
     times = Vector{Float64}(undef, nmeas)
@@ -101,6 +154,7 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
     k = 1
     _measure!(energies, means, series, observables, 1, 0.0, times, prob, config)
     for step = 1:ns
+        thermo && _fill_noise!(sc.gth, H, sigma, seed_u, step)
         _step!(integrator, config, prob, dtf, sc, Int(ntasks))
         if renorm_interval > 0 && step % renorm_interval == 0
             _renormalize_active!(H, config)
@@ -112,7 +166,8 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
                       prob, config)
         end
     end
-    return LLGResult(times, energies, means, series, config, ns, dtf, mi)
+    return LLGResult(times, energies, means, series, config, ns, dtf, mi,
+                     kt, seed_u, H.n_active)
 end
 
 # One measurement row: the SCE energy is computed once and shared by the

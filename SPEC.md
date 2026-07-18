@@ -62,20 +62,43 @@ boundary (`MU_B_EV_T`). Anchor: g = 2, 1 T → 27.9925 GHz (`test_units.jl`).
     conserved total spin (`ω = −pJs`), magmom halves the frequency, B_ext adds
     the Larmor rate, damped relaxation to the ferro ground state.
 
-## Planned (design settled, not yet implemented)
+## Stochastic LLG (implemented)
 
-- **Stochastic LLG**: noise field added to `B` inside the working equation;
-  `D = α·kB·T/(γ·magmom·μ_B)` — no `(1+α²)` in this parametrization (maps to
-  García-Palacios–Lázaro under `γ_L = γ/(1+α²)`, `λ = α`). Implementation form
-  `G_th,i = σ_i·ξ_i` per step, `σ_i = √(2 α_i kB T ħ magmom_i/(g_i Δt))` [eV],
-  the SAME draw shared by both Heun stages (Stratonovich). Keyed Philox4x32-10,
-  counter `(site, step, slot, domain-tag)` — stateless, checkpoint carries only
-  `(seed, n_step, dt)`; widen/split the step word before 2³¹ steps. Gates:
-  single-spin Boltzmann histogram α-independent between α = 0.1 and 1.0 (a wrong
-  `(1+α²)` is a 2× temperature error at α = 1), then ⟨E⟩/⟨|m|⟩ vs
-  `SCEMonteCarlo` Metropolis at matched T (3σ, τ_int-aware binning both sides,
-  dt-halving column).
+`run_llg(...; temperature/kT, seed)` switches on the thermal field: per active
+site and step, `G_th,i = σ_i·ξ_i` with `σ_i = √(2 α_i kB T ħ magmom_i/(g_i Δt))`
+[eV], `ξ ~ N(0, I₃)` — the eV-side form of the fluctuation–dissipation constant
+`D = α·kB·T/(γ·magmom·μ_B)`, which carries **no `(1+α²)`** in this
+parametrization (it maps to García-Palacios–Lázaro under `γ_L = γ/(1+α²)`,
+`λ = α`; `src/noise.jl`). The SAME draw feeds both Heun stages (Stratonovich).
+Requires `α > 0` on every active site. Weak order 1 ⇒ O(dt) equilibrium bias.
+
+Noise draws are keyed philox4x32-10 through `SCEMonteCarlo.philox_block` /
+`philox_normal2` (public facade, Random123 known-answer-gated): counter
+`(site, step_lo32, slot ∈ {0,1}, 0x5344_0000 | step_hi16)` — the nonzero "SD"
+word-4 tag keeps every stream disjoint from MC's GPU streams under a shared
+seed; step capacity 2^48; four normals per (site, step), the fourth discarded
+(reserved). A draw is a pure function of (seed, site, step): no RNG state, and
+trajectories stay bit-identical for any `ntasks`. Default `seed = rand(UInt64)`
+(the sibling convention), recorded in `LLGResult.seed`.
+
+`equilibrium_stats(res; evaluables, discard, nbins)` (`src/stats.jl`) bridges
+the recorded series to `SCEMonteCarlo`'s public binning machinery
+(`LogBinner`/`BinStore`/`bin_means`/`jackknife`): raw observables get
+τ_int-aware `ObservableStat`s, and the SAME `Evaluable` definitions the MC
+drivers accept (specific heat, susceptibility, Binder, user-defined) are
+jackknifed with `f(means, res.kT, res.n_active)`. Thermostatted runs only.
+
+Gates (`test_thermostat.jl`): single-spin uniaxial Boltzmann vs analytic
+quadrature at α = 1.0 AND α = 0.5 (α-independence — a wrong `(1+α²)` is a
+(1+α²)× temperature error, measured agreement ~0.1σ), noise determinism
+(seed/ntasks/temperature-route), sphere preservation under noise, and the
+cross-package gate: sLLG ≡ `run_mc` Metropolis equilibrium (⟨E⟩, ⟨e₁·e₂⟩ at 3σ
+with τ_int-aware errors on both sides) on the dimer.
+
+## Planned
+
 - Seams kept open: integrator dispatch (`_step!`), additive torque terms beyond
   energy gradients (STT/SOT), observable callback at stride, `NoiseModel`.
+- JLD2 checkpoint/resume (stateless noise ⇒ carries only seed + step + config).
 - Later: S(q,ω) from trajectory dumps, GNEB, Mentink SIB, adaptive dt, GPU
   (needs the device ∇Z in SCEMonteCarlo — its phase 2).

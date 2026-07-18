@@ -49,6 +49,25 @@ equation, unit system, and the settled stochastic-LLG design.
 - **Upstream gradient contract**: `energy_gradient!` (tangent-projected, exact,
   bit-identical for any ntasks, ≈ 1 sweep/call) is pinned in SCEMonteCarlo's
   `test_gradient.jl`; this package's determinism gates assume it.
+- **FDT constant ↔ `_omega`'s (1+α²) prefactor ↔ the α-independence gate**:
+  `σ_i = √(2 α kB T ħ magmom/(g Δt))` in `noise.jl` is correct ONLY for noise
+  entering the (1+α²)-prefactored equation that `_omega` implements — change
+  either parametrization and the other (and design-notes in SPEC.md) must move;
+  the runtime tripwire is the α = 0.5 vs 1.0 Boltzmann gate in
+  `test_thermostat.jl`. The same draw must feed BOTH integrator stages
+  (Stratonovich) — `_fill_noise!` runs once per step, never per stage.
+- **Noise counter layout ↔ SCEMonteCarlo's philox contract**: word 4 carries the
+  nonzero `_DOMAIN_SD` tag (MC streams use 0 — the documented upstream
+  contract); `philox_block`/`philox_normal2` are the public facade pinned by the
+  Random123 known-answer test upstream. Change the layout and seeded
+  trajectories change (breaking-note territory, the P6 scope).
+- **`equilibrium_stats` ↔ SCEMonteCarlo's `_finalize_stats`**: `stats.jl`
+  deliberately parallels the MC finalization (bin size
+  `max(1, fld(kept, nbins))`, jackknife over `bin_means`, the
+  `f(means, kT, n_active)` NamedTuple call, the `< 2` bins → NaN path) on the
+  upstream **public** tier — if SCEMonteCarlo changes its binning/jackknife
+  conventions or `ObservableStat`, this bridge follows (gate: the cross-package
+  equilibrium test compares stats produced by both pipelines).
 - **`Observable` contract ↔ SCEMonteCarlo's**: `run_llg` reuses
   `SCEMonteCarlo.Observable` verbatim (`f(config, energy, H)`, `energy` = SCE
   energy, intercept excluded, Zeeman NOT included) so one definition measures

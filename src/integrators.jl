@@ -41,20 +41,26 @@ struct HeunProjected end
 
 const AbstractIntegrator = Union{DepondtMertens,HeunProjected}
 
-# Per-run work buffers (never shared across concurrent runs).
+# Per-run work buffers (never shared across concurrent runs). `gth` is the
+# per-step thermal-gradient field — zeros for a deterministic run, refilled once
+# per step by the sLLG driver and read by BOTH stages (Stratonovich, noise.jl).
 struct _LLGScratch
     G::Vector{SVector{3,Float64}}       # all-site gradient (both stages, in place)
     omega1::Vector{SVector{3,Float64}}  # stage-1 rotation vectors
     epred::SpinConfig                   # predictor configuration
+    gth::Vector{SVector{3,Float64}}     # thermal gradient of the current step
 end
 _LLGScratch(n::Int) = _LLGScratch(Vector{SVector{3,Float64}}(undef, n),
                                   Vector{SVector{3,Float64}}(undef, n),
-                                  SpinConfig(undef, n))
+                                  SpinConfig(undef, n),
+                                  fill(zero(SVector{3,Float64}), n))
 
-# ω_s at spin `e` given the SCE gradient `gsce` (site-active callers only).
+# ω_s at spin `e` given the SCE gradient `gsce` and the step's thermal field
+# `gth` (site-active callers only).
 @inline function _omega(prob::LLGProblem, s::Int, e::SVector{3,Float64},
-                        gsce::SVector{3,Float64})::SVector{3,Float64}
-    gt = gsce + prob.gzee[s]
+                        gsce::SVector{3,Float64},
+                        gth::SVector{3,Float64})::SVector{3,Float64}
+    gt = gsce + prob.gzee[s] + gth
     return -prob.pref[s] * (gt + prob.alpha[s] * cross(e, gt))
 end
 
@@ -81,14 +87,14 @@ function _step!(::DepondtMertens, config::SpinConfig, prob::LLGProblem,
             sc.epred[s] = config[s]
             continue
         end
-        ω1 = _omega(prob, s, config[s], sc.G[s])
+        ω1 = _omega(prob, s, config[s], sc.G[s], sc.gth[s])
         sc.omega1[s] = ω1
         sc.epred[s] = _rotate(config[s], ω1 * dt)
     end
     energy_gradient!(sc.G, H, sc.epred; ntasks = ntasks)
     @inbounds for s = 1:n_sites(H)
         H.site_active[s] || continue
-        ω2 = _omega(prob, s, sc.epred[s], sc.G[s])
+        ω2 = _omega(prob, s, sc.epred[s], sc.G[s], sc.gth[s])
         config[s] = _rotate(config[s], (sc.omega1[s] + ω2) * (dt / 2))
     end
     return nothing
@@ -104,7 +110,7 @@ function _step!(::HeunProjected, config::SpinConfig, prob::LLGProblem,
             sc.epred[s] = config[s]
             continue
         end
-        ω1 = _omega(prob, s, config[s], sc.G[s])
+        ω1 = _omega(prob, s, config[s], sc.G[s], sc.gth[s])
         sc.omega1[s] = ω1
         ep = config[s] + dt * cross(ω1, config[s])
         sc.epred[s] = ep / norm(ep)
@@ -112,7 +118,7 @@ function _step!(::HeunProjected, config::SpinConfig, prob::LLGProblem,
     energy_gradient!(sc.G, H, sc.epred; ntasks = ntasks)
     @inbounds for s = 1:n_sites(H)
         H.site_active[s] || continue
-        ω2 = _omega(prob, s, sc.epred[s], sc.G[s])
+        ω2 = _omega(prob, s, sc.epred[s], sc.G[s], sc.gth[s])
         e = config[s] + (dt / 2) * (cross(sc.omega1[s], config[s]) +
                                     cross(ω2, sc.epred[s]))
         config[s] = e / norm(e)

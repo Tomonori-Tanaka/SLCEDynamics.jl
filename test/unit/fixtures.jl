@@ -46,6 +46,42 @@ function _biquadratic_model(seed)
     return SCEPredictor(b, 0.0, 0.05 .* randn(MersenneTwister(seed), n_salcs(b)))
 end
 
+# A single-site uniaxial-anisotropy model (tetragonal cell, spglib backend ⇒ the
+# lone body-1 l = 2, m = 0 SALC): E is φ-independent and even in e_z — the 1-D
+# Boltzmann quadrature target of the thermostat gate.
+function _uniaxial_model(K::Float64)
+    lat = Lattice(Matrix(Diagonal([4.0, 4.0, 6.0])))
+    cr = Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
+    b = SCEBasis(cr, BasisSpec(; nbody = 1, cutoff = 1.0, lmax = [2],
+                               isotropy = false); backend = SpglibBackend())
+    @assert n_salcs(b) == 1
+    return SCEPredictor(b, 0.0, [K])
+end
+
+_uniaxial_config(u::Float64, φ::Float64 = 0.0) =
+    MC.SpinConfig([SVector(sqrt(1 - u^2) * cos(φ), sqrt(1 - u^2) * sin(φ), u)])
+
+# Boltzmann averages of f(u) for a φ-symmetric single-site energy E(u), uniform
+# sphere measure (du), by Simpson quadrature.
+function _boltzmann_average(Eu, kt::Float64, f; npts::Int = 2001)
+    us = range(-1.0, 1.0; length = npts)
+    Ev = [Eu(u) for u in us]
+    w = exp.(-(Ev .- minimum(Ev)) ./ kt)
+    simpson(g) = begin
+        @assert isodd(length(g))    # composite Simpson needs an even interval count
+        h = Float64(step(us))
+        s = g[1] + g[end]
+        for i = 2:2:(length(g) - 1)
+            s += 4 * g[i]
+        end
+        for i = 3:2:(length(g) - 2)
+            s += 2 * g[i]
+        end
+        s * h / 3
+    end
+    return simpson(w .* [f(us[i], Ev[i]) for i in eachindex(us)]) / simpson(w)
+end
+
 _rand_spin(rng) = normalize(SVector{3,Float64}(randn(rng, 3)))
 
 _rand_config(rng, H::MC.TiledHamiltonian) =

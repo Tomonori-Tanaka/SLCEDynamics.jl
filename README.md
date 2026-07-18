@@ -9,18 +9,23 @@ Atomistic spin dynamics (Landau–Lifshitz–Gilbert) for fitted spin-cluster-ex
   tiled supercell Hamiltonian, through `SCEMonteCarlo`'s exact all-site gradient
   `energy_gradient!`.
 
-## v0 scope
+## Scope
 
-- Deterministic (`T = 0`) LLG: `de_i/dt = p_i·[e_i×G_i + α_i e_i×(e_i×G_i)]`,
+- LLG: `de_i/dt = p_i·[e_i×G_i + α_i e_i×(e_i×G_i)]`,
   `p_i = g_i/(ħ·magmom_i·(1+α_i²))`; energies in eV, time in fs, per-site
   `magmom` (μ_B) / `α` / `g`, uniform external field in tesla.
 - Integrators: Depondt–Mertens (rotation-based Heun, norm-exact — default) and
   projected Heun (independent cross-check).
-- RNG-free, bit-reproducible for any `ntasks` (the `SCEMonteCarlo` P6 discipline).
+- **Stochastic LLG**: pass `temperature` [K] or `kT` [eV] to `run_llg` — keyed
+  counter-based Philox thermal noise (stateless, Stratonovich), validated
+  against analytic Boltzmann distributions and `SCEMonteCarlo` Metropolis
+  equilibrium averages. `equilibrium_stats` computes τ_int-aware means and
+  jackknifed `Evaluable`s (specific heat &c.) with the same definitions as the
+  MC drivers.
+- Bit-reproducible for any `ntasks`; deterministic runs consume no RNG (the
+  `SCEMonteCarlo` P6 discipline).
 
-Planned next: stochastic LLG (Philox counter-based thermal noise, validated
-against `SCEMonteCarlo` Metropolis equilibrium averages), JLD2 checkpointing,
-S(q,ω), GNEB. See `SPEC.md`.
+Planned next: JLD2 checkpointing, S(q,ω), GNEB, SIB. See `SPEC.md`.
 
 ## Quick start
 
