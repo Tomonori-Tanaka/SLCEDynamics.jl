@@ -36,10 +36,16 @@ Atomistic spin dynamics (Landau–Lifshitz–Gilbert) for fitted spin-cluster-ex
   averaging and seed ensembles. Conventions pinned by exact analytic gates
   (Larmor, dimer, ring dispersion, Parseval sum rules).
 
-- **GPU path** (`run_llg_gpu`, A100 validation pending): the same runs on a
-  KernelAbstractions backend — same noise stream (a same-seed CPU/GPU pair is
-  one stochastic realization), same result/checkpoint semantics, bitwise
-  reproducible per (seed, backend, workgroupsize).
+- **Semi-quantum thermostat** (`thermostat = QuantumThermostat()`): Barker–Bauer
+  colored noise — magnon occupations follow Bose–Einstein statistics (specific
+  heat → 0 as T → 0), no zero-point term, zero extra RNG draws per step, and the
+  classical mode stays byte-identical. See `docs/src/guide/quantum_thermostat.md`
+  for the validity window and the statistics caveats.
+- **GPU path** (`run_llg_gpu`, A100-validated: 25.0× vs same-node 8-task CPU at
+  the l044 8³ production model): the same runs on a KernelAbstractions backend —
+  same noise stream (a same-seed CPU/GPU pair is one stochastic realization),
+  same result/checkpoint semantics, bitwise reproducible per
+  (seed, backend, workgroupsize).
 
 Planned next: GNEB, SIB, GPU S(q,ω). See `SPEC.md`.
 
@@ -57,6 +63,17 @@ res = run_llg(prob, config0; dt = 0.1, nsteps = 100_000, # dt in fs
 res.times, res.energies, res.mean_spins                  # built-in time series
 res.series[:absm]                                        # any Observable's series
 ```
+
+## Documentation
+
+```sh
+make -C docs build      # Documenter site → docs/build/index.html
+make -C docs serve      # live-reload local server
+```
+
+Guides: deterministic LLG, thermal (sLLG), the quantum thermostat, S(q,ω),
+checkpoint/resume, and the GPU path, plus the full API reference. Design decision
+records live separately under `docs/specs/`.
 
 ## Tests
 

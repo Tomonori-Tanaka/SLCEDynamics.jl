@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Documenter documentation site (`docs/`): index, getting started, guides
+  (deterministic LLG, thermal sLLG, quantum thermostat, S(q,ω),
+  checkpoint/resume, GPU) with executed examples, and the API reference
+  covering every exported and public name (`make -C docs build`).
+- `bench/bench_gpu_qtb.jl`: the quantum-thermostat device smoke (classical
+  zero-sized-filter run, quantum end-to-end, device checkpoint/resume
+  bitwise gate, classical-vs-quantum step-time readout).
 - Quantum thermostat, milestone 1 of 4 (wiring tier; decision record
   `docs/specs/quantum-thermostat.md`): `thermostat` kwarg on `run_llg`
   (`ClassicalThermostat()` default / `QuantumThermostat()`), the DF2T
