@@ -28,8 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the stored coefficients verbatim, never from current package constants)
   and `state/filter` (bitwise restore, the `_config_verbatim` twin);
   v1/v2 files back-read as classical; quantum checkpoint/crash-resume/
-  extension are bit-identical; the GPU `resume` refuses quantum files
-  until Q-M3.
+  extension are bit-identical.
+- Quantum thermostat, milestone 3 (GPU): `run_llg_gpu` takes the same
+  `thermostat` kwarg; the device noise kernel is a literal port of the
+  host cascade on a transposed (coalesced) `n × 6NS` state matrix with
+  host-side stationary init uploaded once; filter state joins the
+  event-gated checkpoint downloads; the GPU `resume` restores quantum
+  files (stored coefficients + state, verbatim). KA-CPU bitwise gates:
+  kernel ≡ host fill (nontrivial filter, gth + full state), device
+  identity wiring gate, GPU quantum checkpoint/resume/extension.
 
 - GPU LLG/sLLG (`run_llg_gpu`, public unexported pending the A100 go/no-go;
   decision record `docs/specs/gpu-llg.md`): both integrators on a

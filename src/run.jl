@@ -219,21 +219,7 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
         kt = NaN
         seed_u = 0
     end
-    local fstate::Union{Nothing,_FilterState}
-    if thermostat isa QuantumThermostat
-        thermo || throw(ArgumentError(
-            "the quantum thermostat needs a temperature (pass temperature or kT)"))
-        tau = kt * dtf / HBAR_EV_FS
-        tau <= _QT_MAX_TAU || throw(ArgumentError(
-            "kT·dt/ħ = $(round(tau; sigdigits = 3)) exceeds the quantum " *
-            "thermostat's validity bound $(_QT_MAX_TAU) — use dt ≤ " *
-            "$(round(_QT_MAX_TAU * HBAR_EV_FS / kt; sigdigits = 3)) fs at this " *
-            "temperature (dt ≤ $(round(0.05 * HBAR_EV_FS / kt; sigdigits = 3)) " *
-            "fs recommended)"))
-        fstate = _init_filter_state(_build_quantum_filter(kt, dtf), H, seed_u)
-    else
-        fstate = nothing
-    end
+    fstate = _resolve_quantum_fstate(thermostat, thermo, kt, dtf, H, seed_u)
     spec = _RunSpec(prob, integrator, dtf, ns, mi, Int(renorm_interval), kt,
                     seed_u, observables, :cpu, "", 0, thermostat)
     ck = _make_llg_checkpointer(checkpoint, checkpoint_interval, prob)

@@ -248,6 +248,27 @@ end
     return (UInt32(site), lo, slot, _DOMAIN_SD | hi)
 end
 
+# The shared quantum-thermostat resolution of `run_llg` AND `run_llg_gpu`
+# (one definition — the validation and the τ bound must never drift between
+# the two drivers): returns `nothing` for the classical thermostat, else
+# validates and builds the freshly-initialized filter state.
+function _resolve_quantum_fstate(thermostat::AbstractThermostat, thermo::Bool,
+                                 kt::Float64, dtf::Float64,
+                                 H::TiledHamiltonian,
+                                 seed_u::UInt64)::Union{Nothing,_FilterState}
+    thermostat isa QuantumThermostat || return nothing
+    thermo || throw(ArgumentError(
+        "the quantum thermostat needs a temperature (pass temperature or kT)"))
+    tau = kt * dtf / HBAR_EV_FS
+    tau <= _QT_MAX_TAU || throw(ArgumentError(
+        "kT·dt/ħ = $(round(tau; sigdigits = 3)) exceeds the quantum " *
+        "thermostat's validity bound $(_QT_MAX_TAU) — use dt ≤ " *
+        "$(round(_QT_MAX_TAU * HBAR_EV_FS / kt; sigdigits = 3)) fs at this " *
+        "temperature (dt ≤ $(round(0.05 * HBAR_EV_FS / kt; sigdigits = 3)) " *
+        "fs recommended)"))
+    return _init_filter_state(_build_quantum_filter(kt, dtf), H, seed_u)
+end
+
 # Fresh-run state: every active site starts in the EXACT stationary law of the
 # filter (x₀ = L·ζ per component, ζ Philox-keyed at step 0 — no burn-in), so a
 # run is a pure function of the seed with no carried state before step 1.

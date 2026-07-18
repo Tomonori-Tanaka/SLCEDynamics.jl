@@ -234,12 +234,13 @@ stays Markovian — the QTB approximation; occupations accurate ~1% for
 **Current status: the shipped filter is the identity placeholder** — a
 `QuantumThermostat()` run is bitwise the classical one (the milestone-1
 wiring gate) until the pinned fit constants land (Q-M4); the types stay
-public-unexported and the GPU path takes no thermostat kwarg (Q-M3).
+public-unexported (Q-M3 landed: `run_llg_gpu` takes the same `thermostat`
+kwarg — in-kernel cascade on a transposed device state, host-side init —
+and the GPU `resume` restores quantum files).
 Checkpoint schema v3 (Q-M2, landed): `run/thermostat` always;
 quantum-only `run/filter_id` (provenance), `run/filter/coeffs`
 (authoritative — resume rebuilds from the stored coefficients verbatim),
-`state/filter` (bitwise restore); v1/v2 back-read as classical; GPU resume
-refuses quantum files until Q-M3.
+`state/filter` (bitwise restore); v1/v2 back-read as classical.
 
 ## Planned
 
@@ -247,6 +248,6 @@ refuses quantum files until Q-M3.
   energy gradients (STT/SOT), observable callback at stride, `NoiseModel`
   (adaptive-QTB upgrade path), device-side observable reductions /
   async-overlap measurement.
-- Later: quantum-thermostat milestones Q-M3–Q-M4 (GPU kernel,
-  Barker–Bauer constants + physics gates), GNEB, Mentink SIB, adaptive dt,
+- Later: quantum-thermostat milestone Q-M4 (pinned Barker–Bauer constants +
+  physics gates), GNEB, Mentink SIB, adaptive dt,
   GPU S(q,ω), multi-GPU.

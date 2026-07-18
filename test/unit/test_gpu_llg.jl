@@ -232,6 +232,79 @@ end
         @test sw.compute == "gpu:cpu" && sw.nsteps == 16
     end
 
+    @testset "a6: quantum thermostat on the device path" begin
+        n = MC.n_sites(Hd)
+        kt = 0.02
+        dtf = 0.05
+        seed = UInt64(77)
+        sigma = SD._sigma_noise(probd, kt, dtf)
+        # (i) kernel ≡ host _fill_noise_quantum! bitwise across steps with a
+        # NONTRIVIAL 2-section filter (run-level gates below use the identity
+        # placeholder whose state is identically zero — this pins the real
+        # cascade arithmetic and the transposed device state layout; Q-M4's
+        # constants re-exercise it end-to-end)
+        sections = [SD._Biquad(0.8, 0.3, -0.1, -0.5, 0.06),
+                    SD._Biquad(1.1, -0.2, 0.05, -0.9, 0.25)]
+        Aq, Bq, _, _ = SD._filter_state_space(sections)
+        filt = SD.ColoredNoiseFilter(sections,
+            SD._stationary_sqrt(SD._stationary_cov(Aq, Bq)))
+        fs_host = SD._init_filter_state(filt, Hd, seed)
+        fs_dev = SD._init_filter_state(filt, Hd, seed)
+        st = SD.GPULLGState(gHd, probd, c0d, sigma, fs_dev)
+        host_gth = fill(zero(SVector{3,Float64}), n)
+        qkern = SD._noise_kernel_quantum!(CPU(), 64)
+        for step = 1:6
+            qkern(st.dgth, st.dxstate, st.dsections, st.dsigma, st.dactive,
+                  seed, step; ndrange = n)
+            KernelAbstractions.synchronize(CPU())
+            SD._fill_noise_quantum!(host_gth, Hd, sigma, fs_host.x, filt,
+                                    seed, step)
+            @test Vector(st.dgth) == host_gth
+            SD._download_filter!(fs_dev, st)
+            @test fs_dev.x == fs_host.x
+            # inactive: exact +0.0 field, state columns never touched
+            @test all(Vector(st.dgth)[s] === zero(SVector{3,Float64})
+                      for s = 3:4)
+            @test all(all(fs_dev.x[:, s] .=== 0.0) for s = 3:4)
+        end
+
+        # (ii) identity-filter wiring gate on the device: quantum ≡ classical
+        kwq = (; dt = dtf, nsteps = 30, kT = kt, seed = 7,
+               measure_interval = 6)
+        rc = SD.run_llg_gpu(probd, c0d, gHd; kwq...)
+        rq = SD.run_llg_gpu(probd, c0d, gHd; kwq...,
+                            thermostat = SD.QuantumThermostat())
+        @test rq.config == rc.config && rq.energies == rc.energies
+        @test rq.thermostat == "quantum" && rc.thermostat == "classical"
+
+        # (iii) GPU quantum checkpoint / resume / extension bitwise
+        dir = mktempdir()
+        kwc = (; dt = dtf, kT = kt, seed = 5, measure_interval = 4,
+               thermostat = SD.QuantumThermostat())
+        path = joinpath(dir, "gpuqt.jld2")
+        a = SD.run_llg_gpu(probd, c0d, gHd; kwc..., nsteps = 20)
+        b = SD.run_llg_gpu(probd, c0d, gHd; kwc..., nsteps = 20,
+                           checkpoint = path, checkpoint_interval = 7)
+        @test a.config == b.config && a.energies == b.energies
+        c = resume(path, probd, gHd)          # completed → reconstruct
+        @test c.config == a.config && c.thermostat == "quantum"
+        path2 = joinpath(dir, "gpuqt2.jld2")
+        SD.run_llg_gpu(probd, c0d, gHd; kwc..., nsteps = 12,
+                       checkpoint = path2)
+        long = SD.run_llg_gpu(probd, c0d, gHd; kwc..., nsteps = 36)
+        ext = resume(path2, probd, gHd; nsteps = 36)
+        @test ext.config == long.config && ext.energies == long.energies
+        @test ext.thermostat == "quantum"
+        # the CPU method still refuses GPU files (compute check, unchanged)
+        @test_throws ErrorException resume(path, probd)
+        # GPU quantum validation mirrors the CPU path
+        @test_throws ArgumentError SD.run_llg_gpu(probd, c0d, gHd; dt = dtf,
+            nsteps = 5, thermostat = SD.QuantumThermostat())
+        @test_throws ArgumentError SD.run_llg_gpu(probd, c0d, gHd; dt = 1.0,
+            nsteps = 5, kT = 0.5, seed = 1,
+            thermostat = SD.QuantumThermostat())
+    end
+
     @testset "b1: Larmor on the device path (Depondt constant-field exact)" begin
         H1 = MC.TiledHamiltonian(_uniaxial_model(1e-20); dims = (1, 1, 1))
         gH1 = MC.GPUTiledHamiltonian(CPU(), H1)

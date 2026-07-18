@@ -7,7 +7,8 @@
     run_llg_gpu(prob::LLGProblem, config0::SpinConfig, gH;
                 dt, nsteps, integrator = DepondtMertens(),
                 observables = Observable[], temperature = nothing, kT = nothing,
-                seed = nothing, measure_interval = 10, renorm_interval = 1000,
+                seed = nothing, thermostat = ClassicalThermostat(),
+                measure_interval = 10, renorm_interval = 1000,
                 workgroupsize = 128, checkpoint = nothing,
                 checkpoint_interval = 0) -> LLGResult
 
@@ -22,6 +23,11 @@ gradient/rotation roundoff).
 `gH` is `SCEMonteCarlo.GPUTiledHamiltonian(backend, prob.H)` — build it once
 and reuse it across runs (the table upload is seconds at production sizes).
 
+`thermostat` accepts `QuantumThermostat()` with the same contract as
+[`run_llg`](@ref) (temperature required, `kT·dt/ħ ≤ $(_QT_MAX_TAU)`): the
+stationary init always runs on the host and is uploaded once; the in-kernel
+cascade filters the same white draws as the CPU path.
+
 Determinism scope: the trajectory is bitwise reproducible for a fixed
 (`seed`, backend, `workgroupsize`, package + Julia version) — the gradient
 fold order depends on `workgroupsize` (pinned default 128), so unlike the CPU
@@ -34,6 +40,7 @@ function run_llg_gpu(prob::LLGProblem, config0::SpinConfig, gH;
                      observables::Vector{Observable} = Observable[],
                      temperature = nothing, kT = nothing,
                      seed::Union{Nothing,Integer} = nothing,
+                     thermostat::AbstractThermostat = ClassicalThermostat(),
                      measure_interval::Integer = 10,
                      renorm_interval::Integer = 1000,
                      workgroupsize::Integer = 128,
@@ -88,25 +95,29 @@ function run_llg_gpu(prob::LLGProblem, config0::SpinConfig, gH;
         kt = NaN
         seed_u = 0
     end
+    # host-side stationary init (the single bitwise surface), uploaded once;
+    # validation shared with run_llg (one definition of the τ bound)
+    fstate = _resolve_quantum_fstate(thermostat, thermo, kt, dtf, H, seed_u)
     spec = _RunSpec(prob, integrator, dtf, ns, mi, Int(renorm_interval), kt,
                     seed_u, observables, :gpu, _backend_tag(gH.backend), ws,
-                    ClassicalThermostat())
+                    thermostat)
     ck = _make_llg_checkpointer(checkpoint, checkpoint_interval, prob)
     sigma = thermo ? _sigma_noise(prob, kt, dtf) : zeros(n)
-    st = GPULLGState(gH, prob, config0, sigma)
+    st = GPULLGState(gH, prob, config0, sigma, fstate)
     tr = _make_trace(spec)
     tr.k = 1
     copyto!(st.h_config, config0)
     _measure!(tr.energies, tr.means, tr.series, observables, 1, 0.0, tr.times,
               prob, st.h_config)
-    return _llg_loop_gpu!(spec, st, gH, tr, 0, ck)
+    return _llg_loop_gpu!(spec, st, gH, tr, 0, ck, fstate)
 end
 
 # The device stepping loop from `step0` (already applied). Bit-identity of a
 # resumed run rests on the same absolute-step purity as the CPU loop (noise
 # counter, renorm cadence, measurement grid) plus the fixed (backend, ws).
 function _llg_loop_gpu!(spec::_RunSpec, st::GPULLGState, gH, tr::_Trace,
-                        step0::Int, ck)::LLGResult
+                        step0::Int, ck,
+                        fstate::Union{Nothing,_FilterState} = nothing)::LLGResult
     backend = gH.backend
     prob = spec.prob
     thermo = isfinite(spec.kt)
@@ -117,31 +128,43 @@ function _llg_loop_gpu!(spec::_RunSpec, st::GPULLGState, gH, tr::_Trace,
     # invokelatest on the launches below: the upstream JET-barrier convention
     # (see _gpu_step! — abstract-Backend kernel unions)
     nkern = _noise_kernel!(backend, ws)
+    qkern = _noise_kernel_quantum!(backend, ws)
     rkern = _renorm_kernel!(backend, ws)
     for step = (step0 + 1):ns
         if thermo
-            Base.invokelatest(nkern, st.dgth, st.dsigma, st.dactive, spec.seed,
-                              step; ndrange = n)
+            if fstate === nothing
+                Base.invokelatest(nkern, st.dgth, st.dsigma, st.dactive,
+                                  spec.seed, step; ndrange = n)
+            else
+                Base.invokelatest(qkern, st.dgth, st.dxstate, st.dsections,
+                                  st.dsigma, st.dactive, spec.seed, step;
+                                  ndrange = n)
+            end
         end
         _gpu_step!(spec.integrator, st, gH, spec.dt, ws)
         if spec.renorm_interval > 0 && step % spec.renorm_interval == 0
             Base.invokelatest(rkern, st.dconfig, st.dactive; ndrange = n)
         end
         meas = step % mi == 0 || step == ns
-        if meas || _ck_due(ck, false)
+        ckdue = _ck_due(ck, false)
+        if meas || ckdue
             KernelAbstractions.synchronize(backend)
             copyto!(st.h_config, st.dconfig)
+            # the filter state rides the checkpoint only — measurements never
+            # read it
+            fstate !== nothing && ckdue && _download_filter!(fstate, st)
         end
         if meas
             tr.k += 1
             _measure!(tr.energies, tr.means, tr.series, spec.observables, tr.k,
                       step * spec.dt, tr.times, prob, st.h_config)
         end
-        _ck_llg!(ck, spec, st.h_config, tr, step, false)
+        _ck_llg!(ck, spec, st.h_config, tr, step, false, fstate)
     end
     KernelAbstractions.synchronize(backend)
     copyto!(st.h_config, st.dconfig)
-    _ck_llg!(ck, spec, st.h_config, tr, ns, true)
+    fstate !== nothing && _download_filter!(fstate, st)
+    _ck_llg!(ck, spec, st.h_config, tr, ns, true, fstate)
     return LLGResult(tr.times, tr.energies, tr.means, tr.series,
                      copy(st.h_config), ns, spec.dt, mi, spec.kt, spec.seed,
                      prob.H.n_active, _compute_string(spec),
@@ -180,10 +203,6 @@ function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem, gH;
         throw(ArgumentError(
             "gH was built from a different Hamiltonian than prob.H"))
     data = _read_llg_ckpt(path, prob, observables)
-    data.thermostat == "classical" || error(
-        "this checkpoint is a quantum-thermostat run — the GPU path takes no " *
-        "thermostat yet (Q-M3 pending); resume it on the CPU with " *
-        "resume(path, prob; ...)")
     tag = _backend_tag(gH.backend)
     ws = workgroupsize === nothing ?
          (data.workgroupsize > 0 ? data.workgroupsize : 128) :
@@ -201,16 +220,28 @@ function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem, gH;
               "allow_compute_switch = true to proceed deliberately")
     end
     ns_t = _resume_target(data, nsteps)
+    local fstate::Union{Nothing,_FilterState}
+    local th::AbstractThermostat
+    if data.thermostat == "quantum"
+        filt = _filter_from_coeffs(data.filter_coeffs)
+        nlanes = 6 * length(filt.sections)
+        fstate = _FilterState(filt, _filter_state_verbatim(data.filter_state,
+                                                           nlanes,
+                                                           n_sites(H)))
+        th = QuantumThermostat()
+    else
+        fstate = nothing
+        th = ClassicalThermostat()
+    end
     spec = _RunSpec(prob, data.integrator, data.dt, ns_t, data.mi, data.renorm,
-                    data.kt, data.seed, observables, :gpu, tag, ws,
-                    ClassicalThermostat())
+                    data.kt, data.seed, observables, :gpu, tag, ws, th)
     tr, config = _resume_trace(spec, data, prob, observables)
     interval = checkpoint_interval === nothing ? data.stored_interval :
                Int(checkpoint_interval)
     ck = _make_llg_checkpointer(checkpoint, interval, prob)
     thermo = isfinite(data.kt)
     sigma = thermo ? _sigma_noise(prob, data.kt, data.dt) : zeros(n_sites(H))
-    st = GPULLGState(gH, prob, config, sigma)
+    st = GPULLGState(gH, prob, config, sigma, fstate)
     copyto!(st.h_config, config)
-    return _llg_loop_gpu!(spec, st, gH, tr, data.step, ck)
+    return _llg_loop_gpu!(spec, st, gH, tr, data.step, ck, fstate)
 end

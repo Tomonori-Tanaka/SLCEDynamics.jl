@@ -255,7 +255,9 @@ end
         end
         @test resume(clpath, prob; observables = obs).thermostat == "classical"
 
-        # the GPU resume refuses a quantum file (Q-M3 pending)
+        # the GPU resume of a CPU-written quantum file is a compute switch —
+        # refused without the explicit opt-in (Q-M3 semantics; the quantum
+        # state itself restores fine once the switch is allowed)
         gH = MC.GPUTiledHamiltonian(SD.KernelAbstractions.CPU(), H)
         err = try
             resume(path, prob, gH; observables = obs)
@@ -263,7 +265,10 @@ end
         catch e
             e
         end
-        @test err isa ErrorException && occursin("quantum", err.msg)
+        @test err isa ErrorException && occursin("compute switch", err.msg)
+        sw = resume(path, prob, gH; observables = obs,
+                    allow_compute_switch = true, checkpoint = nothing)
+        @test sw.thermostat == "quantum" && sw.compute == "gpu:cpu"
 
         # v2 rewrite of a classical v3 file back-reads as classical
         v2path = joinpath(dir, "qt_v2.jld2")

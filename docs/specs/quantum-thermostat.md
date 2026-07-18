@@ -6,9 +6,8 @@ the fit experiments. This file is the condensed authority; the working equation
 level detail lives in SPEC.md's "Quantum thermostat" section as it lands.
 
 **Milestone status**: Q-M1 (types + host cascade + counter map + wiring gates)
-implemented; Q-M2 checkpoint schema v3 implemented; Q-M3 GPU kernel and
-Q-M4 pinned
-Barker–Bauer fit constants + physics gates pending. Until Q-M4 the shipped
+implemented; Q-M2 checkpoint schema v3 implemented; Q-M3 GPU kernel
+implemented; Q-M4 pinned Barker–Bauer fit constants + physics gates pending. Until Q-M4 the shipped
 filter is the **identity placeholder** — a `QuantumThermostat()` run is
 bitwise the classical one (deliberate: that identity is the Q-M1 wiring gate),
 and the thermostat types stay public-unexported.
@@ -78,10 +77,15 @@ and the thermostat types stay public-unexported.
   checkpoint / crash-resume / extension are gated bit-identical, including a
   non-zero-state writer/reader round-trip (the identity placeholder keeps
   run-produced states at zero, so the layout is pinned directly).
-- GPU (Q-M3): device state matrix `n × (6·NS)` (transpose of host — coalesced
-  one-thread-per-site; transposed only at event-gated H2D/D2H), literal-port
-  noise kernel, init always host-side. Until Q-M3, `run_llg_gpu` has no
-  thermostat kwarg (quantum is CPU-only).
+- GPU (Q-M3, landed): device state matrix `n × (6·NS)` (transpose of host —
+  coalesced one-thread-per-site; transposed only at the event-gated H2D/D2H,
+  a bitwise-lossless permutation staged through `h_xstage`), literal-port
+  `_noise_kernel_quantum!`/`_qt_cascade_dev!`, stationary init always
+  host-side and uploaded once. `run_llg_gpu` takes the same `thermostat`
+  kwarg/validation as `run_llg`; the GPU `resume` restores quantum files
+  (coeffs + state verbatim). KA-CPU gates: kernel ≡ host fill bitwise (gth +
+  full state, nontrivial 2-section filter), device identity wiring gate,
+  GPU quantum checkpoint/resume/extension bitwise.
 
 ## Q5 — statistics boundary
 

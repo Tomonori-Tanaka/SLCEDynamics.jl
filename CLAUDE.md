@@ -70,8 +70,11 @@ equation, unit system, and the settled stochastic-LLG design.
   recurrence (the Lyapunov init and the equivalence test derive from it).
   Change the recurrence, the lane layout `(c−1)·2NS + 2(j−1) + r`, or the
   slot map and the twin, the tests, and the decision record move together —
-  plus the checkpoint `state/filter` layout (schema v3) and the GPU noise
-  kernel once those milestones land.
+  plus the checkpoint `state/filter` layout (schema v3, verbatim restore
+  from the STORED coefficients) and the device port
+  `_noise_kernel_quantum!`/`_qt_cascade_dev!` (`gpu/kernels.jl` — identical
+  expression order on a transposed `n × 6NS` state, bitwise-gated vs the
+  host fill in test_gpu_llg.jl a6).
 - **Checkpoint writer ↔ reader ↔ the absolute-step purity of `_llg_loop!`**
   (`checkpoint.jl`, `run.jl`): resume bit-identity rests on every per-step
   effect being a pure function of the absolute step index — the Philox counter

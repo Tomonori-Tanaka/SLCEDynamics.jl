@@ -1,9 +1,10 @@
 # The device step kernels: literal ports of `_omega` / `_rotate` / the two
-# integrators' stage structure and of `_fill_noise!` / `_renormalize_active!` —
-# one thread per site, same expression order as the host (the composite keyed
-# reference in test_gpu_llg.jl and the bitwise gates rest on that). COUPLED
-# SITES: change `_omega`/`_rotate`/`_step!`/`_fill_noise!` on the host and these
-# kernels (plus the gates) move with them.
+# integrators' stage structure and of `_fill_noise!` / `_fill_noise_quantum!` /
+# `_renormalize_active!` — one thread per site, same expression order as the
+# host (the composite keyed reference in test_gpu_llg.jl and the bitwise gates
+# rest on that). COUPLED SITES: change `_omega`/`_rotate`/`_step!`/
+# `_fill_noise!`/`_qt_cascade!` on the host and these kernels (plus the gates)
+# move with them.
 
 # The thermal field, in-kernel: the SAME philox draws as the host `_fill_noise!`
 # (same counter layout, same 2-blocks → 3-normals mapping, same fourth-normal
@@ -20,6 +21,49 @@
         n1, n2 = philox_normal2(philox_block(seed, c1))
         n3, _ = philox_normal2(philox_block(seed, c2))
         gth[s] = sigma[s] * SVector(n1, n2, n3)
+    else
+        gth[s] = zero(SVector{3,Float64})
+    end
+end
+
+# One component's DF2T cascade update at site `s`, on the TRANSPOSED device
+# state (`x[s, lane]` — site-fastest, coalesced): expression order identical
+# to the host `_qt_cascade!` (COUPLED SITE — bitwise gate on the KA-CPU
+# backend), only the indexing axis differs.
+@inline function _qt_cascade_dev!(x, sections, s::Int, off::Int,
+                                  xi::Float64)::Float64
+    u = xi
+    @inbounds for j in eachindex(sections)
+        bq = sections[j]
+        p1 = off + 2 * j - 1
+        p2 = off + 2 * j
+        out = bq.b0 * u + x[s, p1]
+        x[s, p1] = bq.b1 * u - bq.a1 * out + x[s, p2]
+        x[s, p2] = bq.b2 * u - bq.a2 * out
+        u = out
+    end
+    return u
+end
+
+# The quantum-thermostat thermal field, in-kernel: the SAME slots-0/1 white
+# draws as `_noise_kernel!` (shared realization), pushed through the biquad
+# cascade — the literal port of the host `_fill_noise_quantum!`. Inactive
+# sites take the `dactive` branch: exact `zero(SVector)` field, state columns
+# untouched (the D12 discipline extended to the state array).
+@kernel function _noise_kernel_quantum!(gth, xstate, @Const(sections),
+                                        @Const(sigma), @Const(active),
+                                        seed::UInt64, step::Int)
+    s = @index(Global, Linear)
+    # Int(s): the CUDA backend's @index returns Int32; the helpers are Int-typed
+    @inbounds if active[s] != Int8(0)
+        c1, c2 = _noise_ctrs(Int(s), step)
+        n1, n2 = philox_normal2(philox_block(seed, c1))
+        n3, _ = philox_normal2(philox_block(seed, c2))
+        m = 2 * length(sections)
+        y1 = _qt_cascade_dev!(xstate, sections, Int(s), 0, n1)
+        y2 = _qt_cascade_dev!(xstate, sections, Int(s), m, n2)
+        y3 = _qt_cascade_dev!(xstate, sections, Int(s), 2 * m, n3)
+        gth[s] = sigma[s] * SVector(y1, y2, y3)
     else
         gth[s] = zero(SVector{3,Float64})
     end
