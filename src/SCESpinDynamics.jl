@@ -24,6 +24,7 @@ module SCESpinDynamics
 using JLD2: jldopen
 using KernelAbstractions: KernelAbstractions, @kernel, @index, @Const
 using LinearAlgebra: norm, normalize, dot, cross
+using LinearAlgebra: I, kron, eigen, Symmetric, Diagonal
 using StaticArrays
 using Statistics: mean
 using SCEFitting: Crystal, n_atoms
@@ -49,11 +50,16 @@ public AbstractIntegrator
 public channel_sumrule
 # GPU path (public-unexported until the A100 go/no-go, mirroring the sibling)
 public run_llg_gpu, GPULLGState
+# Quantum thermostat (public-unexported until the pinned Barker–Bauer fit
+# constants land — the current filter is the identity wiring placeholder)
+public ClassicalThermostat, QuantumThermostat, AbstractThermostat
+public ColoredNoiseFilter
 
 include("units.jl")
 include("problem.jl")
 include("integrators.jl")
 include("noise.jl")
+include("thermostat.jl")
 include("run.jl")
 include("checkpoint.jl")
 include("stats.jl")

@@ -61,6 +61,17 @@ equation, unit system, and the settled stochastic-LLG design.
   contract); `philox_block`/`philox_normal2` are the public facade pinned by the
   Random123 known-answer test upstream. Change the layout and seeded
   trajectories change (breaking-note territory, the P6 scope).
+- **Quantum-thermostat cascade ↔ slot map ↔ state-space twin**
+  (`thermostat.jl`, `noise.jl` header, `docs/specs/quantum-thermostat.md`
+  Q2/Q3): `_qt_cascade!`/`_fill_noise_quantum!` share the classical slots-0/1
+  draws (byte-compat of classical mode is pinned by literal Philox words in
+  `test_quantum_thermostat.jl`) and claim step 0, slots ≥ 2 for the
+  stationary init; `_filter_state_space` is the algebraic twin of the DF2T
+  recurrence (the Lyapunov init and the equivalence test derive from it).
+  Change the recurrence, the lane layout `(c−1)·2NS + 2(j−1) + r`, or the
+  slot map and the twin, the tests, and the decision record move together —
+  plus the checkpoint `state/filter` layout (schema v3) and the GPU noise
+  kernel once those milestones land.
 - **Checkpoint writer ↔ reader ↔ the absolute-step purity of `_llg_loop!`**
   (`checkpoint.jl`, `run.jl`): resume bit-identity rests on every per-step
   effect being a pure function of the absolute step index — the Philox counter

@@ -89,7 +89,8 @@ function run_llg_gpu(prob::LLGProblem, config0::SpinConfig, gH;
         seed_u = 0
     end
     spec = _RunSpec(prob, integrator, dtf, ns, mi, Int(renorm_interval), kt,
-                    seed_u, observables, :gpu, _backend_tag(gH.backend), ws)
+                    seed_u, observables, :gpu, _backend_tag(gH.backend), ws,
+                    ClassicalThermostat())
     ck = _make_llg_checkpointer(checkpoint, checkpoint_interval, prob)
     sigma = thermo ? _sigma_noise(prob, kt, dtf) : zeros(n)
     st = GPULLGState(gH, prob, config0, sigma)
@@ -143,7 +144,8 @@ function _llg_loop_gpu!(spec::_RunSpec, st::GPULLGState, gH, tr::_Trace,
     _ck_llg!(ck, spec, st.h_config, tr, ns, true)
     return LLGResult(tr.times, tr.energies, tr.means, tr.series,
                      copy(st.h_config), ns, spec.dt, mi, spec.kt, spec.seed,
-                     prob.H.n_active, _compute_string(spec))
+                     prob.H.n_active, _compute_string(spec),
+                     _thermostat_string(spec.thermostat))
 end
 
 """
@@ -196,7 +198,8 @@ function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem, gH;
     end
     ns_t = _resume_target(data, nsteps)
     spec = _RunSpec(prob, data.integrator, data.dt, ns_t, data.mi, data.renorm,
-                    data.kt, data.seed, observables, :gpu, tag, ws)
+                    data.kt, data.seed, observables, :gpu, tag, ws,
+                    ClassicalThermostat())
     tr, config = _resume_trace(spec, data, prob, observables)
     interval = checkpoint_interval === nothing ? data.stored_interval :
                Int(checkpoint_interval)

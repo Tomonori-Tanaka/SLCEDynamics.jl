@@ -283,8 +283,11 @@ function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
         "\"$(data.compute)\", workgroupsize = $(data.workgroupsize)) — resume " *
         "it with resume(path, prob, gH::GPUTiledHamiltonian; ...)")
     ns_t = _resume_target(data, nsteps)
+    # v1/v2 checkpoints are classical by construction (quantum runs refuse
+    # checkpointing until schema v3)
     spec = _RunSpec(prob, data.integrator, data.dt, ns_t, data.mi, data.renorm,
-                    data.kt, data.seed, observables, :cpu, "", 0)
+                    data.kt, data.seed, observables, :cpu, "", 0,
+                    ClassicalThermostat())
     tr, config = _resume_trace(spec, data, prob, observables)
     interval = checkpoint_interval === nothing ? data.stored_interval :
                Int(checkpoint_interval)

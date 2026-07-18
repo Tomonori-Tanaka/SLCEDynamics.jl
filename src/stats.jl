@@ -8,7 +8,8 @@
     equilibrium_stats(res::LLGResult;
                       evaluables = standard_evaluables(),
                       discard = length(res.times) ÷ 2,
-                      nbins = 32) -> Dict{Symbol,ObservableStat}
+                      nbins = 32, allow_evaluables = false)
+        -> Dict{Symbol,ObservableStat}
 
 Long-time (equilibrium) averages of a **thermostatted** [`run_llg`](@ref) result:
 every recorded observable series becomes an `ObservableStat` (autocorrelation-aware
@@ -30,14 +31,31 @@ Statistical caveat (SPEC.md): the Heun-family sLLG has weak order 1, so
 equilibrium averages carry an O(dt) bias — check dt-sensitivity before trusting
 a tight comparison. A deterministic run has no ensemble; calling this on one is
 an error.
+
+Quantum-thermostat runs: the equilibrium of a `QuantumThermostat` run is NOT a
+Boltzmann ensemble, so fluctuation-formula evaluables (specific heat
+`var(E)/kT²`, susceptibility, Binder — including the `standard_evaluables()`
+default) estimate something else there and are **refused** unless
+`allow_evaluables = true`. Pass `evaluables = Evaluable[]` for the raw
+time-average stats (always valid), or take response functions from finite
+differences across runs (e.g. specific heat from `d⟨E⟩/dT`).
 """
 function equilibrium_stats(res::LLGResult;
                            evaluables::Vector{Evaluable} = standard_evaluables(),
                            discard::Integer = length(res.times) ÷ 2,
-                           nbins::Integer = 32)::Dict{Symbol,ObservableStat}
+                           nbins::Integer = 32,
+                           allow_evaluables::Bool = false)::Dict{Symbol,ObservableStat}
     isfinite(res.kT) || throw(ArgumentError(
         "equilibrium_stats needs a thermostatted run (run_llg with temperature " *
         "or kT); this result is a deterministic trajectory"))
+    res.thermostat == "quantum" && !isempty(evaluables) && !allow_evaluables &&
+        throw(ArgumentError(
+            "fluctuation-formula evaluables assume a classical Boltzmann " *
+            "ensemble, which a QuantumThermostat run is not — pass " *
+            "evaluables = Evaluable[] for the (always valid) raw time-average " *
+            "stats, take response functions from finite differences across " *
+            "runs (specific heat from d⟨E⟩/dT), or insist with " *
+            "allow_evaluables = true"))
     nm = length(res.times)
     0 <= discard < nm || throw(ArgumentError(
         "discard must be in [0, $(nm - 1)]; got $discard"))

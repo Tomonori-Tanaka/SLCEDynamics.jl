@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Quantum thermostat, milestone 1 of 4 (wiring tier; decision record
+  `docs/specs/quantum-thermostat.md`): `thermostat` kwarg on `run_llg`
+  (`ClassicalThermostat()` default / `QuantumThermostat()`, both public
+  unexported), the DF2T biquad-cascade colored-noise machinery
+  (`ColoredNoiseFilter`, state-space twin + Lyapunov stationary init,
+  step-0 slots-≥2 counter extension — classical counters byte-identical,
+  now pinned by literal Philox words), `LLGResult.thermostat`, the
+  `τ = kT·dt/ħ ≤ 0.1` validity guard, and `equilibrium_stats(...;
+  allow_evaluables)` refusing Boltzmann fluctuation evaluables on quantum
+  runs. **The filter is currently the identity placeholder** — a
+  `QuantumThermostat()` run is bitwise classical until the pinned
+  Barker–Bauer fit constants land (Q-M4); quantum runs refuse checkpointing
+  until schema v3 (Q-M2); the GPU path takes no thermostat kwarg yet (Q-M3).
+
 - GPU LLG/sLLG (`run_llg_gpu`, public unexported pending the A100 go/no-go;
   decision record `docs/specs/gpu-llg.md`): both integrators on a
   KernelAbstractions backend over SCEMonteCarlo's new device gradient

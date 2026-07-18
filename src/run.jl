@@ -20,7 +20,10 @@ Fields:
   (what per-site [`equilibrium_stats`](@ref) evaluables normalize by);
   `compute` is the provenance tag (`"cpu"`, or `"gpu:<backend>"` from
   `run_llg_gpu` — GPU trajectories are bit-reproducible only for a fixed
-  backend and workgroup size).
+  backend and workgroup size); `thermostat` is `"classical"` (white noise —
+  also for deterministic runs) or `"quantum"` (the colored-noise
+  `QuantumThermostat`, whose equilibrium is NOT a Boltzmann ensemble — see
+  [`equilibrium_stats`](@ref)).
 """
 struct LLGResult
     times::Vector{Float64}
@@ -35,12 +38,14 @@ struct LLGResult
     seed::UInt64
     n_active::Int
     compute::String
+    thermostat::String
 end
 
 function Base.show(io::IO, r::LLGResult)
     therm = isfinite(r.kT) ? ", kT = $(r.kT)" : ""
+    qt = r.thermostat == "quantum" ? ", quantum" : ""
     tag = r.compute == "cpu" ? "" : ", $(r.compute)"
-    print(io, "LLGResult($(r.nsteps) steps, dt = $(r.dt) fs$(therm)$(tag), ",
+    print(io, "LLGResult($(r.nsteps) steps, dt = $(r.dt) fs$(therm)$(qt)$(tag), ",
           "$(length(r.times)) measurements, E_end = $(r.energies[end]))")
 end
 
@@ -63,6 +68,7 @@ struct _RunSpec
     compute::Symbol                  # :cpu | :gpu
     backend_tag::String              # "" on the CPU path
     workgroupsize::Int               # 0 on the CPU path
+    thermostat::AbstractThermostat   # ClassicalThermostat() unless quantum sLLG
 end
 
 _compute_string(spec::_RunSpec)::String =
@@ -96,7 +102,8 @@ end
     run_llg(prob::LLGProblem, config0::SpinConfig; dt, nsteps,
             integrator = DepondtMertens(), observables = Observable[],
             temperature = nothing, kT = nothing, seed = nothing,
-            measure_interval = 10, ntasks = 1, renorm_interval = 1000,
+            thermostat = ClassicalThermostat(), measure_interval = 10,
+            ntasks = 1, renorm_interval = 1000,
             checkpoint = nothing, checkpoint_interval = 0)
         -> LLGResult
 
@@ -120,6 +127,12 @@ matches the returned `config` exactly).
   — the trajectory is a pure function of
   (`prob`, `config0`, `dt`, `nsteps`, `integrator`, `seed`), no RNG state
   exists, and results are bit-identical for any `ntasks`.
+- `thermostat`: `ClassicalThermostat()` (default — white noise, the classical
+  FDT) or `QuantumThermostat()` (semi-quantum colored noise; requires a
+  temperature and `kT·dt/ħ ≤ $(_QT_MAX_TAU)` — see the type's docstring for
+  the physics and its validity limits). The quantum filter consumes the SAME
+  white draws, so a same-seed classical and quantum run share one underlying
+  white realization.
 - `integrator`: [`DepondtMertens`](@ref) (default) or [`HeunProjected`](@ref).
 - `observables`: a vector of `SCEMonteCarlo.Observable`s — the SAME definitions
   the Monte Carlo drivers accept (`Observable(name, ncomp, f)` with
@@ -150,6 +163,7 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
                  observables::Vector{Observable} = Observable[],
                  temperature = nothing, kT = nothing,
                  seed::Union{Nothing,Integer} = nothing,
+                 thermostat::AbstractThermostat = ClassicalThermostat(),
                  measure_interval::Integer = 10, ntasks::Integer = 1,
                  renorm_interval::Integer = 1000,
                  checkpoint::Union{Nothing,AbstractString} = nothing,
@@ -203,14 +217,32 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
         kt = NaN
         seed_u = 0
     end
+    local fstate::Union{Nothing,_FilterState}
+    if thermostat isa QuantumThermostat
+        thermo || throw(ArgumentError(
+            "the quantum thermostat needs a temperature (pass temperature or kT)"))
+        tau = kt * dtf / HBAR_EV_FS
+        tau <= _QT_MAX_TAU || throw(ArgumentError(
+            "kT·dt/ħ = $(round(tau; sigdigits = 3)) exceeds the quantum " *
+            "thermostat's validity bound $(_QT_MAX_TAU) — use dt ≤ " *
+            "$(round(_QT_MAX_TAU * HBAR_EV_FS / kt; sigdigits = 3)) fs at this " *
+            "temperature (dt ≤ $(round(0.05 * HBAR_EV_FS / kt; sigdigits = 3)) " *
+            "fs recommended)"))
+        checkpoint === nothing || throw(ArgumentError(
+            "checkpointing a quantum-thermostat run is not supported yet " *
+            "(requires checkpoint schema v3 — pending)"))
+        fstate = _init_filter_state(_build_quantum_filter(kt, dtf), H, seed_u)
+    else
+        fstate = nothing
+    end
     spec = _RunSpec(prob, integrator, dtf, ns, mi, Int(renorm_interval), kt,
-                    seed_u, observables, :cpu, "", 0)
+                    seed_u, observables, :cpu, "", 0, thermostat)
     ck = _make_llg_checkpointer(checkpoint, checkpoint_interval, prob)
     tr = _make_trace(spec)
     tr.k = 1
     _measure!(tr.energies, tr.means, tr.series, observables, 1, 0.0, tr.times,
               prob, config)
-    return _llg_loop!(spec, config, tr, 0, Int(ntasks), ck)
+    return _llg_loop!(spec, config, tr, 0, Int(ntasks), ck, fstate)
 end
 
 # The stepping loop from `step0` (already applied) to `spec.nsteps`, shared by
@@ -221,7 +253,8 @@ end
 # (`ck` is `nothing` or a `_LLGCheckpointer` — defined in checkpoint.jl, which
 # is included after this file, so the annotation stays off.)
 function _llg_loop!(spec::_RunSpec, config::SpinConfig, tr::_Trace, step0::Int,
-                    ntasks::Int, ck)::LLGResult
+                    ntasks::Int, ck,
+                    fstate::Union{Nothing,_FilterState} = nothing)::LLGResult
     prob = spec.prob
     H = prob.H
     sc = _LLGScratch(n_sites(H))
@@ -230,7 +263,16 @@ function _llg_loop!(spec::_RunSpec, config::SpinConfig, tr::_Trace, step0::Int,
     ns = spec.nsteps
     mi = spec.measure_interval
     for step = (step0 + 1):ns
-        thermo && _fill_noise!(sc.gth, H, sigma, spec.seed, step)
+        # fstate !== nothing ⟺ quantum thermostatted run (run_llg's invariant);
+        # both fills draw the same slots-0/1 white triple — shared realization
+        if thermo
+            if fstate === nothing
+                _fill_noise!(sc.gth, H, sigma, spec.seed, step)
+            else
+                _fill_noise_quantum!(sc.gth, H, sigma, fstate.x, fstate.filter,
+                                     spec.seed, step)
+            end
+        end
         _step!(spec.integrator, config, prob, spec.dt, sc, ntasks)
         if spec.renorm_interval > 0 && step % spec.renorm_interval == 0
             _renormalize_active!(H, config)
@@ -246,7 +288,7 @@ function _llg_loop!(spec::_RunSpec, config::SpinConfig, tr::_Trace, step0::Int,
     _ck_llg!(ck, spec, config, tr, ns, true)      # the completion write
     return LLGResult(tr.times, tr.energies, tr.means, tr.series, config, ns,
                      spec.dt, mi, spec.kt, spec.seed, H.n_active,
-                     _compute_string(spec))
+                     _compute_string(spec), _thermostat_string(spec.thermostat))
 end
 
 # One measurement row: the SCE energy is computed once and shared by the

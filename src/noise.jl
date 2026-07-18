@@ -17,10 +17,15 @@
 # Counter layout (the upstream contract requires a NONZERO word-4 domain tag —
 # MC streams use 0):
 #
-#     ctr = (site, step_lo32, slot, _DOMAIN_SD | step_hi16),  slot ∈ {0, 1}
+#     ctr = (site, step_lo32, slot, _DOMAIN_SD | step_hi16)
 #
-# Two blocks = four normals per (site, step); the fourth is discarded (reserved
-# for a future noise channel). Step capacity 2^48.
+# Slot map (thermostat.jl's `_qt_ctr` shares the word layout — coupled site):
+#   step ≥ 1, slots 0/1 — the white triple, drawn by BOTH thermostats (the
+#     quantum cascade filters these same draws — shared realization); the
+#     fourth normal of slot 1 is discarded (reserved).
+#   step 0, slots 2 … 2 + 3·NS − 1 — the quantum thermostat's stationary-init
+#     draws (step 0 is never drawn by the stepping loop, which starts at 1).
+# Step capacity 2^48.
 
 const _DOMAIN_SD = 0x53440000        # "SD" in the high half of counter word 4
 
