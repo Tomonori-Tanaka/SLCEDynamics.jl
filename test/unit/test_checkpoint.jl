@@ -211,10 +211,11 @@ end
         jldopen(path, "r") do f
             @test f["schema_version"] == 3
             @test f["run/thermostat"] == "quantum"
+            ns_ship = length(SD._QT_S_BIQUADS)
             @test f["run/filter_id"] == SD._QT_FILTER_ID
-            @test size(f["run/filter/coeffs"]::Matrix{Float64}) == (5, 1)
+            @test size(f["run/filter/coeffs"]::Matrix{Float64}) == (5, ns_ship)
             @test size(f["state/filter"]::Matrix{Float64}) ==
-                  (6, MC.n_sites(H))
+                  (6 * ns_ship, MC.n_sites(H))
         end
         c = resume(path, prob; observables = obs)     # completed → no stepping
         _assert_same_llg(a, c)
@@ -283,9 +284,9 @@ end
         @test e2.thermostat == "classical"
         _assert_same_llg(resume(clpath, prob; observables = obs), e2)
 
-        # writer/reader round-trip of a NON-ZERO filter state: the identity
-        # placeholder keeps run-produced states at exact zero, so pin the
-        # state/coefficient layout directly with a nontrivial filter
+        # writer/reader round-trip of a NON-ZERO filter state with a
+        # synthetic hand-checkable filter — pins the state/coefficient layout
+        # independent of the shipped constants
         sections = [SD._Biquad(0.8, 0.3, -0.1, -0.5, 0.06),
                     SD._Biquad(1.1, -0.2, 0.05, -0.9, 0.25)]
         Anb, Bnb, _, _ = SD._filter_state_space(sections)

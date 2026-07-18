@@ -239,10 +239,9 @@ end
         seed = UInt64(77)
         sigma = SD._sigma_noise(probd, kt, dtf)
         # (i) kernel ≡ host _fill_noise_quantum! bitwise across steps with a
-        # NONTRIVIAL 2-section filter (run-level gates below use the identity
-        # placeholder whose state is identically zero — this pins the real
-        # cascade arithmetic and the transposed device state layout; Q-M4's
-        # constants re-exercise it end-to-end)
+        # synthetic 2-section filter — pins the raw cascade arithmetic and the
+        # transposed device-state layout independent of the shipped constants;
+        # (ii)/(iii) below exercise the real shipped filter end-to-end
         sections = [SD._Biquad(0.8, 0.3, -0.1, -0.5, 0.06),
                     SD._Biquad(1.1, -0.2, 0.05, -0.9, 0.25)]
         Aq, Bq, _, _ = SD._filter_state_space(sections)
@@ -268,13 +267,17 @@ end
             @test all(all(fs_dev.x[:, s] .=== 0.0) for s = 3:4)
         end
 
-        # (ii) identity-filter wiring gate on the device: quantum ≡ classical
+        # (ii) device quantum runs: repeat identity; genuinely differ from
+        # classical (the shipped filter reshapes the shared white draws)
         kwq = (; dt = dtf, nsteps = 30, kT = kt, seed = 7,
                measure_interval = 6)
         rc = SD.run_llg_gpu(probd, c0d, gHd; kwq...)
         rq = SD.run_llg_gpu(probd, c0d, gHd; kwq...,
                             thermostat = SD.QuantumThermostat())
-        @test rq.config == rc.config && rq.energies == rc.energies
+        rq2 = SD.run_llg_gpu(probd, c0d, gHd; kwq...,
+                             thermostat = SD.QuantumThermostat())
+        @test rq.config == rq2.config
+        @test rq.config != rc.config
         @test rq.thermostat == "quantum" && rc.thermostat == "classical"
 
         # (iii) GPU quantum checkpoint / resume / extension bitwise

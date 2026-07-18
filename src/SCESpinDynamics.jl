@@ -50,10 +50,8 @@ public AbstractIntegrator
 public channel_sumrule
 # GPU path (public-unexported until the A100 go/no-go, mirroring the sibling)
 public run_llg_gpu, GPULLGState
-# Quantum thermostat (public-unexported until the pinned Barker–Bauer fit
-# constants land — the current filter is the identity wiring placeholder)
-public ClassicalThermostat, QuantumThermostat, AbstractThermostat
-public ColoredNoiseFilter
+export ClassicalThermostat, QuantumThermostat
+public AbstractThermostat, ColoredNoiseFilter
 
 include("units.jl")
 include("problem.jl")

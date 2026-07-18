@@ -5,12 +5,21 @@ plus an adversarial review that adjudicated their one seam conflict and reran
 the fit experiments. This file is the condensed authority; the working equation
 level detail lives in SPEC.md's "Quantum thermostat" section as it lands.
 
-**Milestone status**: Q-M1 (types + host cascade + counter map + wiring gates)
-implemented; Q-M2 checkpoint schema v3 implemented; Q-M3 GPU kernel
-implemented; Q-M4 pinned Barker–Bauer fit constants + physics gates pending. Until Q-M4 the shipped
-filter is the **identity placeholder** — a `QuantumThermostat()` run is
-bitwise the classical one (deliberate: that identity is the Q-M1 wiring gate),
-and the thermostat types stay public-unexported.
+**Milestone status**: ALL FOUR milestones implemented (Q-M1 types/cascade,
+Q-M2 checkpoint schema v3, Q-M3 GPU kernel, Q-M4 pinned constants + physics
+gates). `ClassicalThermostat`/`QuantumThermostat` are exported.
+
+**Shipped filter** (`_QT_S_BIQUADS`, `_QT_FILTER_ID = "bb-aaa10-lm-v1"`,
+fitted by the committed deterministic `dev/fit_qtb_filter.jl` — rerunning
+reproduces the constants exactly): 4 DC-normalized biquads (order 8; one
+Froissart doublet removed from the AAA-10 candidate). Measured certificate:
+max rel 4.11e-3 on x ∈ [0.01, 6.6] (gate 1.5e-2), max abs 7.17e-5 on
+(6.6, 200] (gate 3e-4), H(0) = 1 exact (per-section β0 ≡ α0 — survives the
+bilinear map), |H|² > 0 structurally (tail-notch zero pair at
+−7.7e-5 ± 13.43i, floor ~7e-14), bilinear identity + H_d(1) = 1 verified in
+256-bit arithmetic, z-poles inside the unit disk over τ ∈ [0.001, 0.1].
+Float64 z-form conditioning near DC at τ ≤ 0.01 is ~1e-6 — runtime gates
+bound Pd(0) at 1e-6, never 1e-12 (the exact claims are the script's).
 
 ## Q1 — target and scope
 
@@ -33,7 +42,8 @@ and the thermostat types stay public-unexported.
 - A parallel bank of independent-input sections was rejected with numbers
   (incoherent Σ|H_j|² cannot cancel the Lorentzian 1/x² tail — 5.7% floor;
   matched-Z sampling aliases ~1e-3·σ²Δt). The winner: ONE dimensionless
-  rational fit of θ in x = ħω/kT (AAA order ≈ 10, measured 0.9% max rel;
+  rational fit of θ in x = ħω/kT (AAA order ≈ 10, ~0.9% pre-polish, refined
+  to 0.41% by the LM step;
   Froissart-doublet cleanup + positivity refit required — orders 11–13 blow
   up), spectrally factorized to ~5 real biquads, mapped per run by the
   bilinear transform (exact closed-form discrete PSD `θ_fit(x_w)`,
@@ -99,12 +109,25 @@ and the thermostat types stay public-unexported.
   quantum data. MC cross-validation is classical-only (a deliberate
   ≥ 5σ-mismatch tripwire is part of the Q-M4 gate set).
 
-## Q6 — gate plan (Q-M4)
+## Q6 — gates (Q-M4, landed)
 
-F1 PSD certificate (closed form, 1e-12 vs the fit + the shipped θ error
-bounds); F2 impulse/sinusoid ≡ transfer function; F3 Lyapunov pins; F4 stream
-autocovariance 4σ; F5 determinism/bitwise set (already partly live in Q-M1).
-G1 Larmor occupation vs the exact α-broadened linear-response integral (3σ,
-α ∈ {0.1, 0.5}); G2 Einstein specific heat via two-T finite difference +
-`c < 0.6 kB` at x₀ = 3; G3 classical recovery at x₀ ≈ 0.02; G4 dimer
-two-mode occupations; G5 MC-mismatch tripwire (≥ 5σ).
+All in test_quantum_thermostat.jl, predictions in test/unit/qt_predictions.jl
+(the verified linear-response machinery: single-mode occupation integral with
+the exact (1+α²) pole ω₀ = ω̃/(1+α²), Γ = αω₀; the classical limit collapses
+to kT exactly — the constants-cancellation proof is in that file's header).
+F1 shipped-filter PSD certificate over τ ∈ {0.005, 0.0152, 0.05, 0.1};
+F2 impulse response ≡ closed-form |H_d|² (150k taps, rtol 1e-5);
+F3/F4 shipped-filter Lyapunov pins + seeded stream variance (4σ);
+F5 determinism/bitwise set (the Q-M1–Q-M3 gates, now running the real
+filter). G1 Larmor occupation vs the α-broadened integral of the SHIPPED PSD
+(3σ + 1.5% systematic; α ∈ {0.1, 0.5} — the α-DEPENDENCE is asserted,
+replacing the classical α-independence gate); G2 Einstein specific heat via
+two-T finite difference (c_meas < 0.6 kB; Einstein ≈ 0.50 at x₀ = 3,
+classical exactly 1); G3 classical recovery at x₀ ≈ 0.02
+(prediction-anchored 3σ + the quadrature assertion E_pred/kT > 0.97 —
+θ(0.02) alone is −1%, so "kT to 0.5%" is not a valid statistical gate);
+G4 dimer two-mode occupations (mode-resolved; the 2√3 SALC normalization is
+measured via _dimer_J, never assumed); G5 MC-mismatch tripwire (> 5σ;
+predicted quantum deficit ≈ 0.68 kT at x_o ≈ 2). Verification record behind
+the predictions: classical kT anchors at ≤ 2σ over 6 parameter combos,
+deterministic dimer mode frequencies to 1e-4, dt-halving bias bound 0.4%.

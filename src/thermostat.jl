@@ -18,14 +18,41 @@
 # ≤ 1% spectral-warp accuracy at occupied modes wants τ ≲ 0.05 — enforced as a
 # recommendation in the error text, not a bound).
 const _QT_MAX_TAU = 0.1
+# Lower bound: below this the bilinear poles collapse onto z = 1 and the
+# coefficient conditioning degrades (the Jury margin goes negative near
+# τ ~ 1e-6); at such τ every physical mode is frozen anyway (ħω ≫ kT for
+# every resolvable ω). The guard turns an opaque stability error into a
+# clear message.
+const _QT_MIN_TAU = 1e-4
 const _QT_MAX_NSECTIONS = 8
 
 # Provenance tag of the shipped filter constants, stored in quantum checkpoints
 # (schema v3). Informational only — resume rebuilds the recurrence from the
 # STORED coefficients, never from this package's constants, so a re-fit bumps
-# this tag without invalidating old files. "identity-v0" is the Q-M1/Q-M4
-# wiring placeholder.
-const _QT_FILTER_ID = "identity-v0"
+# this tag without invalidating old files.
+const _QT_FILTER_ID = "bb-aaa10-lm-v1"
+
+# The pinned dimensionless s-domain sections of the Barker–Bauer fit
+# (dev/fit_qtb_filter.jl — deterministic, rerunning reproduces these exactly):
+# |H(i·x)|² ≈ θ(x) = x/(eˣ − 1) with max rel error 4.1e-3 on x ∈ [0.01, 6.6]
+# and max abs error 7.2e-5 on (6.6, 200]; H(0) = 1 EXACT (each section is
+# DC-normalized: β0 ≡ α0, so every DC factor is exactly 1.0 — and survives the
+# bilinear map, whose discrete DC gain per section is β0/α0). All poles/zeros
+# strictly in the LHP (minimal phase, |H|² > 0 everywhere — the tail notch at
+# x ≈ 13.4 bottoms at ~7e-14). Tuple order (β2, β1, β0, α1, α0) per section
+# ŝ² + α1·ŝ + α0 (monic denominators). Trajectory-defining package constants:
+# a re-fit changes seeded quantum trajectories (bump _QT_FILTER_ID; old
+# checkpoints stay valid — they resume from their stored coefficients).
+const _QT_S_BIQUADS = (
+    (0.99170408200695437, 0.036502399709965036, 0.00021448034438006076,
+     0.036616140853002903, 0.00021448034438006076),
+    (0.91927393999329177, 0.42533407733969342, 0.034578550011187502,
+     0.43847417416564211, 0.034578550011187502),
+    (0.00072066283057147591, 1.9691420131595294, 2.1907633098131281,
+     3.265406852584217, 2.1907633098131281),
+    (0.16930356089122989, 2.5987551550330009e-05, 30.517515785768918,
+     9.2962139193574611, 30.517515785768918),
+)
 
 """
     ClassicalThermostat()
@@ -54,12 +81,11 @@ fluctuation-formula evaluables are refused by [`equilibrium_stats`](@ref)
 (take specific heat from `d⟨E⟩/dT` across runs instead), and the classical MC
 cross-checks apply only to [`ClassicalThermostat`](@ref).
 
-!!! warning "Identity placeholder"
-    The pinned Barker–Bauer fit constants have NOT landed yet: the current
-    filter is the identity, so a `QuantumThermostat()` run produces bitwise
-    **classical** white-noise statistics (deliberate — the wiring gate of
-    milestone Q-M1, `docs/specs/quantum-thermostat.md`). The type stays
-    public-unexported until the physics is real.
+The shipped filter (`_QT_S_BIQUADS`, fitted by `dev/fit_qtb_filter.jl`)
+matches θ to 0.41% relative over the occupied band — see
+`docs/specs/quantum-thermostat.md` for the full certificate. The filter
+coefficients are trajectory-defining package constants (`_QT_FILTER_ID`);
+checkpoints store them and resume from the stored values verbatim.
 """
 struct QuantumThermostat end
 
@@ -179,15 +205,24 @@ function _stationary_sqrt(P::Matrix{Float64})::Matrix{Float64}
     return V * Diagonal(sqrt.(max.(e.values, 0.0)))
 end
 
-# The discrete filter for one run, a pure closed-form function of (kT, dt).
-#
-# MILESTONE PLACEHOLDER (wiring tier): the identity section — a flat unit PSD,
-# so the quantum path is bitwise the classical one (the wiring gate in
-# test_quantum_thermostat.jl). The pinned Barker–Bauer fit constants and the
-# bilinear (kT, dt) mapping replace this body; every seam (τ guard, state
-# layout, counters, checkpoint, GPU) is already final.
+# The discrete filter for one run: the pinned s-domain sections mapped by the
+# bilinear transform ŝ = c·(1 − z⁻¹)/(1 + z⁻¹), c = 2/τ, τ = kT·dt/ħ — a pure
+# closed-form function of (kT, dt) (decision record Q2/Q4; the discrete PSD is
+# exactly θ_fit(x_w), x_w = c·tan(ωΔt/2), so there is no aliasing and the F1
+# certificate transfers verbatim). The τ ≤ _QT_MAX_TAU guard has already run.
 function _build_quantum_filter(kt::Float64, dt::Float64)::ColoredNoiseFilter
-    sections = [_Biquad(1.0, 0.0, 0.0, 0.0, 0.0)]
+    tau = kt * dt / HBAR_EV_FS
+    c = 2.0 / tau
+    K = c * c
+    sections = Vector{_Biquad}(undef, length(_QT_S_BIQUADS))
+    for (j, (β2, β1, β0, α1, α0)) in enumerate(_QT_S_BIQUADS)
+        D = K + α1 * c + α0
+        sections[j] = _Biquad((β2 * K + β1 * c + β0) / D,
+                              2 * (β0 - β2 * K) / D,
+                              (β2 * K - β1 * c + β0) / D,
+                              2 * (α0 - K) / D,
+                              (K - α1 * c + α0) / D)
+    end
     A, B, _, _ = _filter_state_space(sections)
     return ColoredNoiseFilter(sections, _stationary_sqrt(_stationary_cov(A, B)))
 end
@@ -266,6 +301,10 @@ function _resolve_quantum_fstate(thermostat::AbstractThermostat, thermo::Bool,
         "$(round(_QT_MAX_TAU * HBAR_EV_FS / kt; sigdigits = 3)) fs at this " *
         "temperature (dt ≤ $(round(0.05 * HBAR_EV_FS / kt; sigdigits = 3)) " *
         "fs recommended)"))
+    tau >= _QT_MIN_TAU || throw(ArgumentError(
+        "kT·dt/ħ = $(round(tau; sigdigits = 3)) is below the quantum " *
+        "thermostat's conditioning bound $(_QT_MIN_TAU) — at such τ every " *
+        "physical mode is frozen (ħω ≫ kT); increase dt or use larger kT"))
     return _init_filter_state(_build_quantum_filter(kt, dtf), H, seed_u)
 end
 

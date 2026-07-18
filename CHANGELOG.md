@@ -11,17 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Quantum thermostat, milestone 1 of 4 (wiring tier; decision record
   `docs/specs/quantum-thermostat.md`): `thermostat` kwarg on `run_llg`
-  (`ClassicalThermostat()` default / `QuantumThermostat()`, both public
-  unexported), the DF2T biquad-cascade colored-noise machinery
+  (`ClassicalThermostat()` default / `QuantumThermostat()`), the DF2T
+  biquad-cascade colored-noise machinery
   (`ColoredNoiseFilter`, state-space twin + Lyapunov stationary init,
   step-0 slots-≥2 counter extension — classical counters byte-identical,
   now pinned by literal Philox words), `LLGResult.thermostat`, the
   `τ = kT·dt/ħ ≤ 0.1` validity guard, and `equilibrium_stats(...;
   allow_evaluables)` refusing Boltzmann fluctuation evaluables on quantum
-  runs. **The filter is currently the identity placeholder** — a
-  `QuantumThermostat()` run is bitwise classical until the pinned
-  Barker–Bauer fit constants land (Q-M4); the GPU path takes no thermostat
-  kwarg yet (Q-M3).
+  runs. (The filter was an identity placeholder within this milestone —
+  superseded by the milestone-4 constants below.)
 - Quantum thermostat, milestone 2 (checkpoint schema v3): `run/thermostat`
   (always written), quantum-only `run/filter_id` (provenance),
   `run/filter/coeffs` (authoritative — resume rebuilds the recurrence from
@@ -29,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `state/filter` (bitwise restore, the `_config_verbatim` twin);
   v1/v2 files back-read as classical; quantum checkpoint/crash-resume/
   extension are bit-identical.
+- Quantum thermostat, milestone 4 (pinned constants + physics gates —
+  **the feature is complete; `ClassicalThermostat`/`QuantumThermostat` are
+  now exported**): the Barker–Bauer fit ships as 4 DC-normalized s-domain
+  biquads (`dev/fit_qtb_filter.jl`, a committed deterministic AAA + LM
+  pipeline; max 0.41% relative PSD error over the occupied band, H(0) = 1
+  exact, provenance `_QT_FILTER_ID = "bb-aaa10-lm-v1"`), bilinear-mapped
+  per run from (kT, dt). Gates: the F1–F4 deterministic filter certificate
+  against the shipped constants, and dynamics gates G1–G5 against the exact
+  linear-response integral of the shipped filter's own discrete PSD —
+  Larmor occupation (the α-broadening is asserted), Einstein specific-heat
+  suppression (c < 0.6 kB at x₀ = 3), classical recovery, dimer two-mode
+  occupations, and the ≥ 5σ MC-mismatch tripwire documenting that classical
+  cross-checks do not apply to quantum runs.
 - Quantum thermostat, milestone 3 (GPU): `run_llg_gpu` takes the same
   `thermostat` kwarg; the device noise kernel is a literal port of the
   host cascade on a transposed (coalesced) `n × 6NS` state matrix with

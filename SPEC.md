@@ -215,7 +215,7 @@ SCEMonteCarlo's device gradient (`gpu_energy_gradient!`). Key properties:
   A100 bench (`bench/bench_gpu_llg.jl`) measures the l044 8³ step — the ≥ 5×
   go/no-go bar.**
 
-## Quantum thermostat (milestone 1 — wiring; fit constants pending)
+## Quantum thermostat (implemented)
 
 Decision record: `docs/specs/quantum-thermostat.md` (Q1–Q6). The semi-quantum
 colored-noise thermostat (Barker & Bauer PRB 100, 140401(R) (2019)): the
@@ -231,12 +231,12 @@ evaluables on quantum runs (`allow_evaluables = true` to insist). Damping
 stays Markovian — the QTB approximation; occupations accurate ~1% for
 `α·(ħω₀/kT) ≲ 0.03` (keep α ≲ 0.05 for quantum statistics).
 
-**Current status: the shipped filter is the identity placeholder** — a
-`QuantumThermostat()` run is bitwise the classical one (the milestone-1
-wiring gate) until the pinned fit constants land (Q-M4); the types stay
-public-unexported (Q-M3 landed: `run_llg_gpu` takes the same `thermostat`
-kwarg — in-kernel cascade on a transposed device state, host-side init —
-and the GPU `resume` restores quantum files).
+The shipped filter (`_QT_S_BIQUADS`, provenance `_QT_FILTER_ID`) matches θ
+to 0.41% relative over the occupied band — certificate and constants in
+`docs/specs/quantum-thermostat.md` and `dev/fit_qtb_filter.jl`.
+`ClassicalThermostat`/`QuantumThermostat` are exported. `run_llg_gpu` takes
+the same `thermostat` kwarg (in-kernel cascade on a transposed device state,
+host-side init) and the GPU `resume` restores quantum files.
 Checkpoint schema v3 (Q-M2, landed): `run/thermostat` always;
 quantum-only `run/filter_id` (provenance), `run/filter/coeffs`
 (authoritative — resume rebuilds from the stored coefficients verbatim),
@@ -248,6 +248,4 @@ quantum-only `run/filter_id` (provenance), `run/filter/coeffs`
   energy gradients (STT/SOT), observable callback at stride, `NoiseModel`
   (adaptive-QTB upgrade path), device-side observable reductions /
   async-overlap measurement.
-- Later: quantum-thermostat milestone Q-M4 (pinned Barker–Bauer constants +
-  physics gates), GNEB, Mentink SIB, adaptive dt,
-  GPU S(q,ω), multi-GPU.
+- Later: GNEB, Mentink SIB, adaptive dt, GPU S(q,ω), multi-GPU.
