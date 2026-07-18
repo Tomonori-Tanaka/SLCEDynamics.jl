@@ -13,6 +13,8 @@ const TEST_MODE = get(ENV, "TEST_MODE", "default")
         include("unit/test_observables.jl")
         include("unit/test_thermostat.jl")
         include("unit/test_checkpoint.jl")
+        include("unit/test_sqw_core.jl")
+        include("unit/test_sqw_gates.jl")
     end
     if TEST_MODE in ("default", "all", "aqua")
         include("aqua.jl")

@@ -80,6 +80,28 @@ equation, unit system, and the settled stochastic-LLG design.
   upstream **public** tier — if SCEMonteCarlo changes its binning/jackknife
   conventions or `ObservableStat`, this bridge follows (gate: the cross-package
   equilibrium test compares stats produced by both pipelines).
+- **S(q,ω) phase table ↔ upstream site ordering** (`sqw.jl` `_fill_phases!` /
+  `channel_sumrule` ↔ SCEMonteCarlo `site_index`/`site_atom`/
+  `supercell_crystal`): the kernel assumes atom-fastest column-major cell order
+  (`atom = mod1(s, n_a)`, `cell = (s−1) ÷ n_a` decomposed column-major) — the
+  upstream documented, `test_geometry.jl`-pinned contract. Local gate: the
+  ordering pin (kernel phases ≡ Cartesian `supercell_crystal` positions) and
+  the translation-covariance test in `test_sqw_core.jl`.
+- **S(q,ω) sign/normalization conventions ↔ the analytic gates**: the spatial
+  sign (`_fill_phases!`'s single `cis(−…)`), the temporal kernel (forward FFT),
+  the `1/√N` normalization, and the `Δt/(M·W₂)` spectral scale are frozen by
+  `test_sqw_gates.jl` (Larmor closed forms, dimer, ring ±q asymmetry) and the
+  Parseval/channel sum rules in `test_sqw_core.jl`. Change any one and the
+  others (plus SPEC.md's estimator block) move together.
+- **`_fft_pow2!` ↔ the reference DFT gate** (`fft.jl` ↔ `test_sqw_core.jl`):
+  the own radix-2 kernel exists for determinism (no FFTW wisdom/threading
+  variance); if FFTW ever replaces it behind the same seam, re-state the
+  determinism scope in SPEC.md and keep the reference-DFT gate.
+- **`trajectory_observable` ↔ the checkpoint series schema**: the recorded
+  `:spins` series is persisted/validated by name and ncomp on resume —
+  renaming the default or changing the `vec(to_matrix(…))` layout breaks
+  stored checkpoint files (schema-version territory) and
+  `structure_factor(path, …)`.
 - **`Observable` contract ↔ SCEMonteCarlo's**: `run_llg` reuses
   `SCEMonteCarlo.Observable` verbatim (`f(config, energy, H)`, `energy` = SCE
   energy, intercept excluded, Zeeman NOT included) so one definition measures

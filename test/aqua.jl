@@ -2,9 +2,7 @@ using SCESpinDynamics
 using Aqua
 
 @testset "Aqua" begin
-    # SCEFitting sits in [deps] only because it is an unregistered transitive
-    # dependency (of the path-dev'd SCEMonteCarlo) that must itself be path-dev'd;
-    # src/ deliberately never loads it (the boundary is SCEMonteCarlo's public
-    # surface), so exempt it from the stale-deps check.
-    Aqua.test_all(SCESpinDynamics; stale_deps = (ignore = [:SCEFitting],))
+    # SCEFitting is a genuine src dependency since the S(q,ω) layer (sqw.jl uses
+    # Crystal / n_atoms / lattice.reciprocal for the q-space geometry).
+    Aqua.test_all(SCESpinDynamics)
 end

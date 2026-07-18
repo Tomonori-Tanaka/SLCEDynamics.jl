@@ -36,24 +36,52 @@ function _dimer_J(H::MC.TiledHamiltonian)
     return (total_energy(H, aligned) - total_energy(H, anti)) / 2
 end
 
+# The 4-atom Heisenberg RING on the dimer crystal: the same NN-pair basis, but
+# every bond carries J (bonds 1–2, 2–3, 3–4 and the periodic 4–1 image, all
+# 2.5 Å < cutoff 2.6) — the S(q,ω) dispersion fixture. All sites active.
+function _ring_model(J::Float64 = -0.02)
+    b = SCEBasis(_dimer_crystal(), BasisSpec(; nbody = 2, cutoff = 2.6,
+                                             lmax = [1], isotropy = true))
+    @assert n_salcs(b) == 4          # exactly the four NN bonds, one SALC each
+    return SCEPredictor(b, 0.0, fill(J, 4))
+end
+
+# The effective ring coupling (E = J_eff Σ_bonds e_i·e_j), measured from tiled
+# energies (the isotropic l = 1 SALC carries a 2√3 normalization — never assume
+# the input coefficient): flipping spin 1 flips bonds (1,2) and (4,1) exactly.
+function _ring_J(H::MC.TiledHamiltonian)
+    up = SVector(0.0, 0.0, 1.0)
+    aligned = MC.SpinConfig([up for _ = 1:H.n_sites])
+    flipped = copy(aligned)
+    flipped[1] = -up
+    return (total_energy(H, aligned) - total_energy(H, flipped)) / 4
+end
+
 # A genuine higher-multipole two-atom model (l ≤ 2, anisotropic, random couplings)
 # — the energy-conservation workhorse.
-function _biquadratic_model(seed)
+function _biquadratic_crystal()
     lat = Lattice(Matrix(3.0 * I(3)))
-    cr = Crystal(lat, [0.2 -0.2; 0.0 0.0; 0.0 0.0], [1, 1], ["Fe"])
-    b = SCEBasis(cr, BasisSpec(; nbody = 2, cutoff = 1.5, lmax = [2],
-                               isotropy = false))
+    return Crystal(lat, [0.2 -0.2; 0.0 0.0; 0.0 0.0], [1, 1], ["Fe"])
+end
+
+function _biquadratic_model(seed)
+    b = SCEBasis(_biquadratic_crystal(), BasisSpec(; nbody = 2, cutoff = 1.5,
+                                                   lmax = [2], isotropy = false))
     return SCEPredictor(b, 0.0, 0.05 .* randn(MersenneTwister(seed), n_salcs(b)))
 end
 
 # A single-site uniaxial-anisotropy model (tetragonal cell, spglib backend ⇒ the
 # lone body-1 l = 2, m = 0 SALC): E is φ-independent and even in e_z — the 1-D
 # Boltzmann quadrature target of the thermostat gate.
-function _uniaxial_model(K::Float64)
+function _uniaxial_crystal()
     lat = Lattice(Matrix(Diagonal([4.0, 4.0, 6.0])))
-    cr = Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
-    b = SCEBasis(cr, BasisSpec(; nbody = 1, cutoff = 1.0, lmax = [2],
-                               isotropy = false); backend = SpglibBackend())
+    return Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
+end
+
+function _uniaxial_model(K::Float64)
+    b = SCEBasis(_uniaxial_crystal(), BasisSpec(; nbody = 1, cutoff = 1.0,
+                                                lmax = [2], isotropy = false);
+                 backend = SpglibBackend())
     @assert n_salcs(b) == 1
     return SCEPredictor(b, 0.0, [K])
 end

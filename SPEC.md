@@ -33,6 +33,8 @@ boundary (`MU_B_EV_T`). Anchor: g = 2, 1 T → 27.9925 GHz (`test_units.jl`).
 | `src/integrators.jl` | `DepondtMertens` (rotation Heun, norm-exact, default), `HeunProjected` (independent cross-check); `_omega` / `_rotate` / `_step!` |
 | `src/run.jl` | `run_llg` driver (fixed step; measurements at step 0, every `measure_interval`, and always at the final step) + `LLGResult`; user observables — the SAME `SCEMonteCarlo.Observable(name, ncomp, f)` definitions the MC drivers accept (`f(config, energy, H)`, fed the **SCE** energy so a definition measures identically in both packages) — recorded as `ncomp × n_measurements` time-series matrices in `LLGResult.series`; the shared stepping loop `_llg_loop!` (also the resume entry) |
 | `src/checkpoint.jl` | JLD2 checkpoint/resume (schema below) — `run_llg(...; checkpoint, checkpoint_interval)` writer + `resume(path, prob::LLGProblem)` (a method of `SCEMonteCarlo.resume`, re-exported) |
+| `src/fft.jl` | own power-of-two radix-2 FFT + Hann/rect windows (deliberately not FFTW — determinism; gated against a reference DFT) |
+| `src/sqw.jl` | S(q,ω): `trajectory_observable`/`trajectory`, `q_path`, `structure_factor` (4 methods) → `SQWResult` (full 3×3 Hermitian tensor + separated elastic tensor), reductions `sqw_diag`/`sqw_trace`/`sqw_perp`/`sqw_plusminus`/`sqw_elastic`, axis helpers, `channel_sumrule` |
 
 ## Conventions and invariants
 
@@ -122,9 +124,68 @@ measurement would not be a prefix of the longer trace. Gates:
 `test_checkpoint.jl` (crash-shaped mid-run files via a throwing observable,
 extension ≡ uninterrupted, `==` throughout).
 
+## S(q,ω) (implemented)
+
+The classical dynamical structure factor from recorded trajectories, with every
+sign and normalization frozen by exact deterministic gates (`test_sqw_gates.jl`,
+`test_sqw_core.jl`). The estimator (fluctuation part, per active site):
+
+    s^α(q,t)      = (1/√N) Σ_{s active} e^{−2πi f·x_s} (e_s^α(t) − ē_s^α)
+    X^α(q,ω_k)    = Σ_{n<M} w_n s^α(q,t_n) e^{−2πikn/M}
+    S^{αβ}(q,ω_k) = (Δt_s/(M·W₂)) · X^α(q,ω_k)^* X^β(q,ω_k)
+    S_el^{αβ}(q)  = m̄^α(q)^* m̄^β(q),   m̄ = (1/√N) Σ_s e^{−2πi f·x_s} ē_s
+
+- **Acquisition**: the trajectory is an ordinary observable
+  (`trajectory_observable(H)`, `ncomp = 3n`, `vec(to_matrix(config))`) — it
+  inherits the measurement cadence, checkpoint persistence (a completed
+  checkpoint file IS the trajectory file format; `structure_factor(path, …)`
+  reads it), resume/extension, and bit-reproducibility with zero new machinery.
+  In-RAM cost `24·n·n_meas` bytes — keep ≲ 10 GB (a chunked writer and a
+  q-projected recorder are deferred seams).
+- **q**: fractional coordinates in the training-cell reciprocal lattice
+  (`q_cart = 2π·Bᵀ·f`; SCEFitting's `reciprocal` carries no 2π — it enters here
+  exactly once). Only supercell-commensurate q (`f_i·N_i ∈ ℤ`) are
+  representable: `structure_factor` throws on others; `q_path(…; dims)` snaps
+  loudly (`qs` vs `qs_requested`). Phases need no Cartesian positions —
+  `q·r_s = 2π f·(cell + frac_atom)` identically, with the cell part in exact
+  integer arithmetic.
+- **Mean/elastic**: the per-site time mean over the analysis window (one global
+  mean, never per segment) is always subtracted; the elastic tensor is reported
+  separately (`S_el`) so Bragg weight cannot leak through the window into the
+  inelastic spectrum.
+- **Axes/components**: two-sided fftshifted ω [rad/fs] (for even `nfft` the
+  Nyquist bin exists only at −M/2) + `energies_mev`; the full 3×3 Hermitian
+  tensor is stored (all reductions are cheap post-contractions): `sqw_diag`,
+  `sqw_trace`, `sqw_perp` (NaN at Γ), `sqw_plusminus` (the ω-sign-resolving
+  transverse channel; positive precession about `+axis` → +ω).
+- **Signs** (gate-pinned, one code site each): spatial `e^{−2πi f·x}` — pinned
+  by the ring gate's +q/−q asymmetry and the translation-covariance gate;
+  temporal `e^{−iωt}` — pinned by the Larmor closed-form (all `S^{+−}` weight
+  at +ω_L).
+- **Statistics**: Welch (`nsegments`, `overlap`, `:hann`/`:none`, derived
+  power-of-two `nfft`, trailing samples truncated), `discard` thermalization
+  prefix, seed-ensemble averaging (`Vector{LLGResult}`; spectra averaged, never
+  amplitudes) with realization standard errors at R ≥ 3. Caveat (documented):
+  Hann + mean subtraction still leaves a residual low-ω leak on thermal data.
+- **Exact gates**: per-(q,α) Parseval (`Σ_k S/(MΔt) ≡` windowed time average,
+  any window); the global sum rule at the sublattice-channel level
+  (`channel_sumrule`: `Σ_{q,a,α,k} S_aa/(MΔt) = Σ_active (1−|ē|²)`; the
+  unfolded S is deliberately NOT one-BZ periodic); Larmor single-bin closed
+  forms (`S^{xx} = MΔt/4` at ±ω_L, bin sum 1/2, `S^{+−} = MΔt` at +ω_L only);
+  the dimer's conserved-q=0 null + single mode at q = (0,0,2) with
+  `Ω = 2p|J_pair|cosθ` (an exact rigid-rotation solution, J measured from
+  tiled energies); the 4-site ring's exact spiral dispersion
+  `ω = 2p|J_eff|cosθ(1−cos(2πm/4))` with the (+q, +ω) placement and magmom
+  scaling. `structure_factor` is a pure function of its inputs — bit-identical
+  across calls and for any `ntasks`.
+- **Deferred**: q-projected/streaming recording, form factors and
+  magmom-weighted intensities, stored chiral channels, full-grid FFT(W) mode,
+  the classical→quantum `βħω/(1−e^{−βħω})` intensity factor, powder averaging,
+  local-frame transverse splits, GPU.
+
 ## Planned
 
 - Seams kept open: integrator dispatch (`_step!`), additive torque terms beyond
   energy gradients (STT/SOT), observable callback at stride, `NoiseModel`.
-- Later: S(q,ω) from trajectory dumps, GNEB, Mentink SIB, adaptive dt, GPU
-  (needs the device ∇Z in SCEMonteCarlo — its phase 2).
+- Later: GNEB, Mentink SIB, adaptive dt, GPU (needs the device ∇Z in
+  SCEMonteCarlo — its phase 2).

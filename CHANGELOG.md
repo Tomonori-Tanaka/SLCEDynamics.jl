@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- S(q,ω): the classical dynamical spin structure factor from recorded
+  trajectories. `trajectory_observable(H)` records the full configuration
+  through the ordinary observable machinery (inheriting cadence, checkpoint
+  persistence — a checkpoint file doubles as the trajectory file — and
+  bit-reproducibility); `structure_factor(...)` (trajectory / `LLGResult` /
+  seed-ensemble / checkpoint-path methods) returns an `SQWResult` holding the
+  full 3×3 Hermitian tensor on a two-sided ω axis [rad/fs, + meV axis], with
+  the elastic tensor separated and per-site means always subtracted.
+  Reductions `sqw_diag`/`sqw_trace`/`sqw_perp`/`sqw_plusminus`/`sqw_elastic`,
+  `q_path` with loud commensurate snapping, Welch segmenting, realization
+  standard errors (≥ 3 seeds), and an own deterministic radix-2 FFT (no FFTW
+  dependency; bit-identical for any `ntasks`). Conventions frozen by exact
+  gates: Larmor closed-form single-bin spectrum, the dimer's conserved-q null +
+  rigid-rotation mode, the 4-site ring's exact spiral dispersion (±q asymmetry
+  pins the spatial sign), Parseval and channel-level sum rules, and an
+  ordering pin against `supercell_crystal`. SCEFitting became a genuine src
+  dependency (`Crystal`/`n_atoms`/`lattice.reciprocal` for q-space geometry).
 - JLD2 checkpoint/resume: `run_llg(...; checkpoint, checkpoint_interval)` writes
   plain-data, atomically-replaced restart files (schema v1, model fingerprint via
   the new `SCEMonteCarlo.model_fingerprint` facade); `resume(path, prob)` — a

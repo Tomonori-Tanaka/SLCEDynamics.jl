@@ -29,8 +29,14 @@ Atomistic spin dynamics (Landau–Lifshitz–Gilbert) for fitted spin-cluster-ex
   `resume(path, prob)` continues (or, via `nsteps`, *extends*) the run
   bit-identically to an uninterrupted one — the stateless noise means no RNG
   state is ever stored.
+- **S(q,ω)**: record the trajectory with `trajectory_observable(H)`, then
+  `structure_factor(res, H, crystal, q_path(crystal, verts; dims = H.dims).qs)`
+  → the full Hermitian tensor on a two-sided ω axis (rad/fs + meV), elastic
+  tensor separated, `sqw_plusminus`/`sqw_perp`/`sqw_trace` reductions, Welch
+  averaging and seed ensembles. Conventions pinned by exact analytic gates
+  (Larmor, dimer, ring dispersion, Parseval sum rules).
 
-Planned next: S(q,ω), GNEB, SIB, GPU. See `SPEC.md`.
+Planned next: GNEB, SIB, GPU. See `SPEC.md`.
 
 ## Quick start
 
