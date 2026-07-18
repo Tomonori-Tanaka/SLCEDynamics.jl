@@ -100,3 +100,11 @@ common-random-number pairing is valid only within a decorrelation time.
   is the A100 bench's ≥ 5× at the l044 8³ LLG step (l02 is expected marginal
   and is NOT a bar — light models stay on the CPU path). `bench/bench_gpu_llg.jl`
   runs the smoke gates (repeat identity, b-tier tolerances) before timing.
+- **Measured 2026-07-19 (kugui A100-SXM4-40GB, job 858227) — GO.** l044 8³
+  (34,816 sites, ws = 128, dt = 0.05 fs, kT = 0.02 eV): smoke green (repeat
+  identity bitwise; same-seed CPU-vs-GPU 20-step max deviation 7.6e-16 —
+  ULP-level, matching the sibling's CUDA Box–Muller scope); LLG step
+  **178.9 ms** on the device vs **4471 ms** on the same-node CPU (8 tasks) —
+  **25.0×** at the l044 8³ bar (≥ 5× ⇒ GO). Consistent with the sibling's
+  l044 sweep cost (one step = two gradient evals ≈ two sweeps). The upstream
+  GR9 gradient-kernel claim held bitwise on CUDA the same job.

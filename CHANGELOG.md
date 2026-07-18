@@ -23,8 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `resume(path, prob, gH)` method continues/extends bit-identically on the
   same backend+ws and refuses compute switches without
   `allow_compute_switch = true`. `LLGResult` gains a `compute` provenance
-  field. No performance claims yet — the A100 bench (`bench/bench_gpu_llg.jl`)
-  and its ≥ 5× l044-8³ bar are the go/no-go.
+  field. A100 go/no-go (2026-07-19, kugui job 858227): **GO** — l044 8³ LLG
+  step 178.9 ms on the device vs 4471 ms same-node CPU-8T (**25.0×** against
+  the ≥ 5× bar); smoke green (repeat identity bitwise, same-seed CPU-vs-GPU
+  20-step deviation 7.6e-16).
 - S(q,ω): the classical dynamical spin structure factor from recorded
   trajectories. `trajectory_observable(H)` records the full configuration
   through the ordinary observable machinery (inheriting cadence, checkpoint
