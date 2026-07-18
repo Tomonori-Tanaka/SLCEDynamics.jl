@@ -96,6 +96,16 @@ bound Pd(0) at 1e-6, never 1e-12 (the exact claims are the script's).
   (coeffs + state verbatim). KA-CPU gates: kernel ≡ host fill bitwise (gth +
   full state, nontrivial 2-section filter), device identity wiring gate,
   GPU quantum checkpoint/resume/extension bitwise.
+- **A100 smoke: PASSED** (2026-07-19, kugui i1accs job 858230,
+  A100-SXM4-40GB, CUDA 12.6, `bench/bench_gpu_qtb.jl` on l044 at 4³,
+  `dt = 0.05` fs, `kT = 0.02` eV, ws = 128). All sections green on the real
+  device: classical run with the zero-sized filter allocations (repeat
+  identity; CPU-vs-GPU 20-step max dev 6.8e-16), quantum end-to-end (repeat
+  identity; dev 5.0e-16, ULP-level; config ≠ classical), device quantum
+  checkpoint/resume/extension bitwise. Step time at 4³: classical 40.8 ms,
+  quantum 40.3 ms — the cascade is free at production scale (−1%, i.e.
+  timing noise; the gradient dominates). Production-size (8³) overhead can
+  be read off a future F1accs run if ever needed.
 
 ## Q5 — statistics boundary
 

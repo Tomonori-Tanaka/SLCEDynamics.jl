@@ -15,7 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   covering every exported and public name (`make -C docs build`).
 - `bench/bench_gpu_qtb.jl`: the quantum-thermostat device smoke (classical
   zero-sized-filter run, quantum end-to-end, device checkpoint/resume
-  bitwise gate, classical-vs-quantum step-time readout).
+  bitwise gate, classical-vs-quantum step-time readout). A100 smoke PASSED
+  2026-07-19 (job 858230, l044 4³): all gates green on CUDA, resume bitwise,
+  quantum step-time overhead within timing noise (see
+  `docs/specs/quantum-thermostat.md` Q4).
 - Quantum thermostat, milestone 1 of 4 (wiring tier; decision record
   `docs/specs/quantum-thermostat.md`): `thermostat` kwarg on `run_llg`
   (`ClassicalThermostat()` default / `QuantumThermostat()`), the DF2T
