@@ -4,20 +4,18 @@
 CurrentModule = SCESpinDynamics
 ```
 
-`run_llg_gpu` runs the same physics on a KernelAbstractions device: both
+[`run_llg_gpu`](@ref) runs the same physics on a KernelAbstractions device: both
 integrators, deterministic and stochastic (including the quantum thermostat), the
 identical `Observable` contract and `LLGResult` semantics — so
 [`equilibrium_stats`](@ref), [`structure_factor`](@ref), and checkpointing consume
-the result unchanged. It is **public but unexported** (pending broader production
-use, mirroring the sibling's GPU entry points) — call it qualified:
+the result unchanged. It is exported (since the A100 go/no-go and the
+quantum-device smoke both passed):
 
 ```julia
-import SCESpinDynamics as SD
-
 gH  = SCEMonteCarlo.GPUTiledHamiltonian(backend, prob.H)   # build ONCE, reuse
-res = SD.run_llg_gpu(prob, config0, gH; dt = 0.05, nsteps = 10^6,
-                     kT = 0.02, seed = 1, checkpoint = "llg_gpu.jld2",
-                     checkpoint_interval = 50_000)
+res = run_llg_gpu(prob, config0, gH; dt = 0.05, nsteps = 10^6,
+                  kT = 0.02, seed = 1, checkpoint = "llg_gpu.jld2",
+                  checkpoint_interval = 50_000)
 ```
 
 `gH` is caller-built and reused across runs — the table upload is seconds at
@@ -54,7 +52,7 @@ is also the way to try the API locally:
 using SCESpinDynamics, SCEMonteCarlo, SCEFitting
 import Spglib
 using LinearAlgebra, Random
-import SCESpinDynamics as SD
+import SCESpinDynamics as SD    # only for the KernelAbstractions module below
 
 lat = Lattice(Matrix(1.0 * I(3)))
 cell = Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
@@ -69,10 +67,10 @@ config0 = SCEMonteCarlo.from_matrix(randn(Xoshiro(1), 3, n_sites(H)))
 backend = SD.KernelAbstractions.CPU()          # the KA module SD itself uses
 gH = SCEMonteCarlo.GPUTiledHamiltonian(backend, H)
 
-res1 = SD.run_llg_gpu(prob, config0, gH; dt = 0.5, nsteps = 200,
-                      kT = 0.01, seed = 9)
-res2 = SD.run_llg_gpu(prob, config0, gH; dt = 0.5, nsteps = 200,
-                      kT = 0.01, seed = 9)
+res1 = run_llg_gpu(prob, config0, gH; dt = 0.5, nsteps = 200,
+                   kT = 0.01, seed = 9)
+res2 = run_llg_gpu(prob, config0, gH; dt = 0.5, nsteps = 200,
+                   kT = 0.01, seed = 9)
 (compute = res1.compute, repeat_bitwise = res1.energies == res2.energies)
 ```
 

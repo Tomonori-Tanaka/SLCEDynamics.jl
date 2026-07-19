@@ -48,8 +48,10 @@ export homega_ev, homega_mev, freq_thz
 export Observable, Evaluable, resume
 public AbstractIntegrator
 public channel_sumrule
-# GPU path (public-unexported until the A100 go/no-go, mirroring the sibling)
-public run_llg_gpu, GPULLGState
+# GPU path (exported 2026-07-19: A100 GO 25x + the quantum-device smoke landed;
+# GPULLGState stays public-unexported machinery)
+export run_llg_gpu
+public GPULLGState
 export ClassicalThermostat, QuantumThermostat
 public AbstractThermostat, ColoredNoiseFilter
 

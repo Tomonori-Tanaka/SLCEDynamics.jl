@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `run_llg_gpu` is now **exported** (was public-unexported pending the A100
+  go/no-go): the GO (25× at l044 8³) and the quantum-device smoke both
+  landed. `GPULLGState` stays public-unexported machinery.
+
 ### Added
 
 - Documenter documentation site (`docs/`): index, getting started, guides

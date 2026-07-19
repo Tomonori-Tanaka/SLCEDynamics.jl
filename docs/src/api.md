@@ -83,6 +83,13 @@ freq_thz
 resume(::AbstractString, ::LLGProblem)
 ```
 
+## GPU
+
+```@docs
+run_llg_gpu
+resume(::AbstractString, ::LLGProblem, ::Any)
+```
+
 ## Re-exported from SCEMonteCarlo
 
 `Observable`, `Evaluable`, and `resume` are the **same bindings** as
@@ -93,13 +100,11 @@ for the `Observable`/`Evaluable` contracts.
 
 ## Public, unexported
 
-The GPU driver (see the [GPU guide](guide/gpu.md)) and verification helpers are
-public but unexported — call them qualified (`SCESpinDynamics.run_llg_gpu`, …).
+Internal-but-stable machinery is public without being exported — call it
+qualified (`SCESpinDynamics.GPULLGState`, …).
 
 ```@docs
-run_llg_gpu
 GPULLGState
-resume(::AbstractString, ::LLGProblem, ::Any)
 ColoredNoiseFilter
 channel_sumrule
 ```

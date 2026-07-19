@@ -9,7 +9,8 @@ decisions; implement/change against it.
 
 - **Separate entry point `run_llg_gpu(prob, config0, gH; …)`** (public,
   unexported until the A100 go/no-go, mirroring the sibling's
-  `gpu_run_sweeps!`): a `backend` kwarg on `run_llg` would silently weaken its
+  `gpu_run_sweeps!`; **promoted to export 2026-07-19** after the GO and the
+  quantum-device smoke both landed — `GPULLGState` stays public-unexported): a `backend` kwarg on `run_llg` would silently weaken its
   documented "pure function of `(prob, config0, dt, nsteps, integrator, seed)`,
   bit-identical for any `ntasks`" contract, which the GPU path cannot honor —
   its trajectory additionally depends on (backend, `workgroupsize`).

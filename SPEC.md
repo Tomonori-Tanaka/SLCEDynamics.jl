@@ -185,9 +185,10 @@ sign and normalization frozen by exact deterministic gates (`test_sqw_gates.jl`,
   the classical→quantum `βħω/(1−e^{−βħω})` intensity factor, powder averaging,
   local-frame transverse splits, GPU.
 
-## GPU path (implemented; A100 go/no-go pending)
+## GPU path (implemented; A100 GO — 25x at l044 8³)
 
-`run_llg_gpu(prob, config0, gH; …)` (public unexported until the go/no-go;
+`run_llg_gpu(prob, config0, gH; …)` (exported since 2026-07-19 — A100 GO
+plus the quantum-device smoke;
 decision record `docs/specs/gpu-llg.md` + SCEMonteCarlo's G7) runs both
 integrators, deterministic and sLLG, on a KernelAbstractions backend over
 SCEMonteCarlo's device gradient (`gpu_energy_gradient!`). Key properties:
