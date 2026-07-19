@@ -242,6 +242,9 @@ Checkpoint schema v3 (Q-M2, landed): `run/thermostat` always;
 quantum-only `run/filter_id` (provenance), `run/filter/coeffs`
 (authoritative — resume rebuilds from the stored coefficients verbatim),
 `state/filter` (bitwise restore); v1/v2 back-read as classical.
+Example tier (G6, landed): the ring-S(q,ω) per-mode intensity gate
+(test_quantum_thermostat.jl) and `examples/bloch_mt.jl` (M(T) Bloch-law
+flattening vs classical, against in-script LSWT estimates).
 
 ## Planned
 

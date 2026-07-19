@@ -112,3 +112,14 @@ MC-mismatch tripwire is part of the gate set.
   See [checkpointing](checkpointing.md).
 - The GPU driver takes the same `thermostat` keyword with the same validation; see
   [GPU](gpu.md).
+
+## A worked example
+
+`examples/bloch_mt.jl` (in the repository) runs a small cubic ferromagnet under
+both thermostats across temperatures and prints ``M(T)`` against linear
+spin-wave estimates: the classical magnetization deficit is linear in ``k_BT``,
+while the quantum thermostat freezes out the high-``\omega`` magnons at low
+``T`` — the discrete-grid signature of the Bloch ``T^{3/2}`` law. The
+``S(q,\omega)`` counterpart (per-mode intensities across a dispersion, gated
+against the linear-response prediction) is the "G6" testset in
+`test/unit/test_quantum_thermostat.jl`.

@@ -168,3 +168,35 @@ end
 # anharmonicity reference for gate-tolerance budgeting.
 _qt_classical_exact(kt::Float64, b::Float64)::Float64 =
     kt * (1 - 2 * (b / kt) / expm1(2 * b / kt))
+
+"""
+    _qt_predict_ring(kt, dt, J, bz, magmom, g, alpha, N, Pfun) -> NamedTuple
+
+Per-mode occupations of the ferro `N`-ring `E = J Σ_bonds e_i·e_{i+1}` (J < 0)
++ field `bz` [T] ∥ ẑ about all-up. Linearizing (m₊ⱼ = e_x,j + i·e_y,j) and
+Fourier-transforming with the unitary `c_m = N^{-1/2} Σ_j e^{-i·2πmj/N} m₊ⱼ`
+gives N INDEPENDENT circular modes (site noises are i.i.d. ⇒ the unitary
+transform preserves the per-mode PSD), each exactly the single-mode problem of
+`_qt_mode_energy`:
+
+    E − E₀ = Σ_m (b_m/2)·|c_m|²,   b_m = b + 2|J|·(1 − cos(2πm/N))  [eV]
+    ω_m = p·b_m,  Γ_m = α·ω_m,     p = g/(ħ·magmom·(1+α²))
+
+Returns `b_m`, `E_m` (⟨E⟩ − E₀ per mode), and `I_m = ⟨|c_m|²⟩ = 2E_m/b_m` —
+the ω-INTEGRATED inelastic `S⁺⁻(q_m)` bin sum of `structure_factor` divided by
+`M·Δt_meas` (its `F₊(q_m)` with all sites active is exactly `c_m`), and equally
+the equal-time `|F₊(q_m)|²` observable. Mode m and N − m are degenerate.
+"""
+function _qt_predict_ring(kt::Float64, dt::Float64, J::Float64, bz::Float64,
+                          magmom::Float64, g::Float64, alpha::Float64, N::Int,
+                          Pfun; npts::Int = 40_001)
+    J < 0 || throw(ArgumentError("ferro ring needs J < 0; got $J"))
+    p = g / (SD.HBAR_EV_FS * magmom * (1 + alpha^2))
+    b = magmom * SD.MU_B_EV_T * bz
+    b_m = [b + 2 * abs(J) * (1 - cospi(2 * m / N)) for m = 0:(N - 1)]
+    E_m = [bm == 0.0 ? 0.0 :
+           _qt_mode_energy(kt, dt, p * bm, alpha * p * bm, Pfun; npts = npts)
+           for bm in b_m]
+    return (; b_m, E_m, I_m = [bm == 0.0 ? 0.0 : 2 * Em / bm
+                               for (Em, bm) in zip(E_m, b_m)])
+end

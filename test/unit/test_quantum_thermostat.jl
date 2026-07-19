@@ -483,6 +483,72 @@ end
         @test (E_mc - E_q) / hypot(mc_err, q_err) > 5
     end
 
+    @testset "G6: ring S(q,ω) intensities (example tier)" begin
+        # 4-ring + field: modes m = 0..3 with b_m = b + 2|J|(1 − cos(2πm/4)),
+        # spanning x = ħω/kT ≈ 1.0 / 2.2 / 3.5 — the ω-integrated inelastic
+        # S⁺⁻(q_m) measures each mode's occupation ⟨|c_m|²⟩ = 2E_m/b_m, so one
+        # spectrum exhibits the quantum suppression ACROSS the dispersion
+        # (θ(x₂)/θ(x₀) ≈ 0.2; classically all modes carry kT).
+        model = _ring_model(-0.375 / (2 * sqrt(3.0)))
+        H = MC.TiledHamiltonian(model; dims = (1, 1, 1))
+        J = _ring_J(H)
+        @test isapprox(J, -0.375; rtol = 1e-10)
+        mu = 120.0                                 # large μ ⇒ small ⟨|m|²⟩ at
+        kt = 0.01                                  # fixed x (renorm systematic)
+        dtf = 1.0
+        alpha = 0.1
+        Bz = 0.6 / (mu * SD.MU_B_EV_T)            # b = 0.6 eV ⇒ ħω̃₀ = 0.01 eV
+        prob = LLGProblem(H; magmom = mu, alpha, b_ext = (0.0, 0.0, Bz))
+        up = SVector(0.0, 0.0, 1.0)
+        cfg = MC.SpinConfig([up for _ = 1:MC.n_sites(H)])
+        # equal-time mode intensities |F₊(q_m)|² (unitary DFT, N = 4) carry the
+        # error bars; the trajectory feeds the S(q,ω) twin of the same numbers
+        mode_obs = [Observable(Symbol(:i, m), 1,
+                        let ph = [cis(-2π * m * (j - 1) / 4) for j = 1:4]
+                            (c, E, h) -> abs2(sum(ph[j] * (c[j][1] + im * c[j][2])
+                                                  for j = 1:4)) / 4
+                        end) for m = 0:2]
+        mi = 15
+        nt = 131_072 + 2_000                       # 2¹⁷ analysis frames + burn-in
+        res = run_llg(prob, cfg; dt = dtf, nsteps = mi * (nt - 1), kT = kt,
+                      seed = 27, measure_interval = mi,
+                      observables = vcat(mode_obs, [trajectory_observable(H)]),
+                      thermostat = SD.QuantumThermostat())
+        pred = _qt_predict_ring(kt, dtf, J, Bz, mu, 2.0, alpha, 4,
+                                _qt_shipped_psd(kt, dtf))
+        st = equilibrium_stats(res; discard = 2_000, evaluables = Evaluable[])
+        r = structure_factor(res, H, _dimer_crystal(),
+                             [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 2.0]];
+                             window = :none, discard = 2_000)
+        @test r.nfft == 131_072
+        spm = sqw_plusminus(r)
+        p = 2.0 / (SD.HBAR_EV_FS * mu * (1 + alpha^2))
+        for m = 0:2
+            Ipred = pred.I_m[m + 1]
+            Ihat = st[Symbol(:i, m)].mean[1]
+            err = st[Symbol(:i, m)].err[1]
+            # 4% systematic: linearization (per-site ⟨|m|²⟩ ≈ 1.5%), thermal
+            # frequency renormalization, and the ≤ 0.4% integrator bias
+            @test abs(Ihat - Ipred) <= 3 * err + 0.04 * Ipred
+            # the S(q,ω) route: ω-integrated inelastic bin sum ≡ the same
+            # occupation (Parseval; +1% for the elastic/window seam)
+            Isqw = sum(spm[m + 1, :]) / (r.nfft * r.dt_meas)
+            @test abs(Isqw - Ipred) <= 3 * err + 0.05 * Ipred
+            # the peak sits at the linear mode frequency ω_m = p·b_m
+            if m >= 1
+                wpk = r.omegas[argmax(spm[m + 1, :])]
+                @test abs(wpk - p * pred.b_m[m + 1]) <= 0.05 * p * pred.b_m[m + 1]
+            end
+        end
+        # quantum suppression across the dispersion: classically every mode
+        # carries kT (I_m^cl = 2kT/b_m), so the zone-boundary/uniform intensity
+        # ratio would be b₀/b₂ — the measured ratio must sit far below it
+        i0 = st[:i0].mean[1]
+        i2 = st[:i2].mean[1]
+        @test i2 / i0 < 0.5 * pred.b_m[1] / pred.b_m[3]
+        @test i2 < 0.35 * 2 * kt / pred.b_m[3]
+    end
+
     @testset "validation" begin
         H = MC.TiledHamiltonian(_dimer_model(); dims = (1, 1, 1))
         prob = LLGProblem(H; magmom = 2.0, alpha = 0.3)

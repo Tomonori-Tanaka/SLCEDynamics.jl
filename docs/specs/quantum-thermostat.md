@@ -141,3 +141,16 @@ measured via _dimer_J, never assumed); G5 MC-mismatch tripwire (> 5σ;
 predicted quantum deficit ≈ 0.68 kT at x_o ≈ 2). Verification record behind
 the predictions: classical kT anchors at ≤ 2σ over 6 parameter combos,
 deterministic dimer mode frequencies to 1e-4, dt-halving bias bound 0.4%.
+
+G6 (example tier, landed 2026-07-19): ring S(q,ω) intensities — one quantum
+sLLG spectrum of the 4-ring + field (modes at x = ħω/kT ≈ 1.0/2.2/3.5)
+gates the ω-INTEGRATED inelastic S⁺⁻(q_m) per mode against the same
+linear-response machinery via `_qt_predict_ring` (unitary mode transform ⇒
+`⟨|c_m|²⟩ = 2E_m/b_m`, which is both the equal-time |F₊(q_m)|² observable
+and the S(q,ω) bin sum — Parseval): equal-time route 3σ + 4%, S(q,ω) route
+3σ + 5%, peak at ω_m = p·b_m within 5%, and the dispersion-wide suppression
+assertion (measured I₂/I₀ ≈ 0.066 vs classical b₀/b₂ ≈ 0.286 — every mode
+would carry kT classically). Measured deviations ~1%, errors ~1.5% (2¹⁷
+frames). Companion example: `examples/bloch_mt.jl` — M(T) of a cubic
+ferromagnet, classical linear deficit vs quantum low-T flattening (the
+discrete-grid Bloch-law signature), against in-script LSWT estimates.

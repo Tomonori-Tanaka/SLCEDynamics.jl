@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Quantum-thermostat example tier (decision-record gate G6):
+  `examples/bloch_mt.jl` — M(T) of a cubic ferromagnet under both
+  thermostats vs linear spin-wave estimates (classical linear deficit,
+  quantum Bloch-law flattening) — and the "G6: ring S(q,ω) intensities"
+  testset gating per-mode ω-integrated S⁺⁻(q_m) of one quantum spectrum
+  (x = ħω/kT ≈ 1.0/2.2/3.5) against the linear-response prediction
+  (`_qt_predict_ring`), by both the equal-time observable and the
+  Parseval bin-sum route.
 - Documenter documentation site (`docs/`): index, getting started, guides
   (deterministic LLG, thermal sLLG, quantum thermostat, S(q,ω),
   checkpoint/resume, GPU) with executed examples, and the API reference
