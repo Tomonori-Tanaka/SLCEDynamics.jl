@@ -12,7 +12,7 @@ the result unchanged. It is exported (since the A100 go/no-go and the
 quantum-device smoke both passed):
 
 ```julia
-gH  = SCEMonteCarlo.GPUTiledHamiltonian(backend, prob.H)   # build ONCE, reuse
+gH  = GPUTiledHamiltonian(backend, prob.H)     # exported by SCEMonteCarlo; build ONCE
 res = run_llg_gpu(prob, config0, gH; dt = 0.05, nsteps = 10^6,
                   kT = 0.02, seed = 1, checkpoint = "llg_gpu.jld2",
                   checkpoint_interval = 50_000)
@@ -65,7 +65,7 @@ prob = LLGProblem(H; magmom = 2.2, alpha = 0.5)
 config0 = SCEMonteCarlo.from_matrix(randn(Xoshiro(1), 3, n_sites(H)))
 
 backend = SD.KernelAbstractions.CPU()          # the KA module SD itself uses
-gH = SCEMonteCarlo.GPUTiledHamiltonian(backend, H)
+gH = GPUTiledHamiltonian(backend, H)
 
 res1 = run_llg_gpu(prob, config0, gH; dt = 0.5, nsteps = 200,
                    kT = 0.01, seed = 9)
