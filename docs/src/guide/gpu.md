@@ -95,3 +95,9 @@ stay on the CPU path — no performance claims beyond these measurements.
 the stationary initialization always runs on the host and is uploaded once; the
 in-kernel cascade filters the same white draws as the CPU path, and the GPU
 `resume` restores quantum checkpoint files (coefficients + filter state verbatim).
+
+**Measured cost** (kugui A100, `bench/bench_gpu_qtb.jl` on l044, records in
+`docs/specs/quantum-thermostat.md` Q4): the quantum-vs-classical step-time overhead
+was within timing noise at 4³ (40.8 vs 40.3 ms, 2026-07-19) and **+0.4%** at the 8³
+production size (311.3 vs 312.6 ms, 34,816 sites, 2026-07-25) — the SCE gradient
+dominates, so the thermostat choice is effectively free.
