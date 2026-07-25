@@ -104,8 +104,12 @@ bound Pd(0) at 1e-6, never 1e-12 (the exact claims are the script's).
   identity; dev 5.0e-16, ULP-level; config ≠ classical), device quantum
   checkpoint/resume/extension bitwise. Step time at 4³: classical 40.8 ms,
   quantum 40.3 ms — the cascade is free at production scale (−1%, i.e.
-  timing noise; the gradient dominates). Production-size (8³) overhead can
-  be read off a future F1accs run if ever needed.
+  timing noise; the gradient dominates). Production-size confirmation
+  (2026-07-25, kugui F1accs job 858827, same bench on l044 at 8³,
+  n_sites = 34816): all sections green again (CPU-vs-GPU 20-step dev
+  6.3e-16, device checkpoint/resume/extension bitwise); step time
+  classical 311.3 ms, quantum 312.6 ms — **+0.4%** overhead, i.e. the
+  cascade stays free at 8³.
 
 ## Q5 — statistics boundary
 
