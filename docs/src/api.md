@@ -1,13 +1,13 @@
 # API reference
 
 ```@meta
-CurrentModule = SCESpinDynamics
+CurrentModule = SLCEDynamics
 ```
 
 ## Module
 
 ```@docs
-SCESpinDynamics
+SLCEDynamics
 ```
 
 ## Units
@@ -21,7 +21,7 @@ MU_B_EV_T
 
 ```@docs
 LLGProblem
-SCEMonteCarlo.total_energy(::LLGProblem, ::SpinConfig)
+SLCEMonteCarlo.total_energy(::LLGProblem, ::SpinConfig)
 ```
 
 ## Integrators
@@ -90,18 +90,18 @@ run_llg_gpu
 resume(::AbstractString, ::LLGProblem, ::Any)
 ```
 
-## Re-exported from SCEMonteCarlo
+## Re-exported from SLCEMonteCarlo
 
 `Observable`, `Evaluable`, and `resume` are the **same bindings** as
-`SCEMonteCarlo`'s (re-exported here): observable/evaluable definitions written for
+`SLCEMonteCarlo`'s (re-exported here): observable/evaluable definitions written for
 the MC drivers plug into this package unchanged, and `resume` gains the
-`LLGProblem` methods documented on this page. See the SCEMonteCarlo API reference
+`LLGProblem` methods documented on this page. See the SLCEMonteCarlo API reference
 for the `Observable`/`Evaluable` contracts.
 
 ## Public, unexported
 
 Internal-but-stable machinery is public without being exported — call it
-qualified (`SCESpinDynamics.GPULLGState`, …).
+qualified (`SLCEDynamics.GPULLGState`, …).
 
 ```@docs
 GPULLGState

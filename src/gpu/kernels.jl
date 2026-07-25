@@ -152,7 +152,7 @@ function _gpu_step!(integrator::AbstractIntegrator, st::GPULLGState, gH,
                     dt::Float64, ws::Int)::Nothing
     backend = gH.backend
     n = n_sites(gH.host)
-    SCEMonteCarlo.gpu_energy_gradient!(st.dG, gH, st.dconfig, st.gsc;
+    SLCEMonteCarlo.gpu_energy_gradient!(st.dG, gH, st.dconfig, st.gsc;
                                        workgroupsize = ws, synchronize = false)
     # invokelatest on every launch: the same static-analysis barrier as the
     # upstream GPU path (with an abstract-Backend signature the GPU half of the
@@ -162,7 +162,7 @@ function _gpu_step!(integrator::AbstractIntegrator, st::GPULLGState, gH,
          _hp_stage1_kernel!(backend, ws)
     Base.invokelatest(k1, st.depred, st.domega1, st.dconfig, st.dG, st.dgth,
                       st.dpref, st.dalpha, st.dgzee, st.dactive, dt; ndrange = n)
-    SCEMonteCarlo.gpu_energy_gradient!(st.dG, gH, st.depred, st.gsc;
+    SLCEMonteCarlo.gpu_energy_gradient!(st.dG, gH, st.depred, st.gsc;
                                        workgroupsize = ws, synchronize = false)
     k2 = integrator isa DepondtMertens ? _dm_stage2_kernel!(backend, ws) :
          _hp_stage2_kernel!(backend, ws)

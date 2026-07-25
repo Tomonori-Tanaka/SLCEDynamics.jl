@@ -1,7 +1,7 @@
 # The semi-quantum thermostat
 
 ```@meta
-CurrentModule = SCESpinDynamics
+CurrentModule = SLCEDynamics
 ```
 
 At low temperature a *classical* thermostat is qualitatively wrong: equipartition
@@ -46,19 +46,19 @@ timing noise at 4³ and **+0.4%** at 8³ (see [GPU](gpu.md) and the decision rec
 A small run, live (8 sites, `kT·dt/ħ ≈ 0.008`):
 
 ```@example qt
-using SCESpinDynamics, SCEMonteCarlo, SCEFitting
+using SLCEDynamics, SLCEMonteCarlo, SLCE
 import Spglib
 using LinearAlgebra, Random
 
 lat = Lattice(Matrix(1.0 * I(3)))
 cell = Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
-basis = SCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
+basis = SLCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
                                  isotropy = true);
                  backend = SpglibBackend(), images = AllImages())
-model = SCEPredictor(basis, 0.0, [-0.01])
+model = SLCEModel(basis, 0.0, [-0.01])
 H = TiledHamiltonian(model; dims = (2, 2, 2))
 prob = LLGProblem(H; magmom = 2.2, alpha = 0.05)      # α ≲ 0.05: see the caveats
-config0 = SCEMonteCarlo.from_matrix(repeat([0.0, 0.0, 1.0], 1, n_sites(H)))
+config0 = SLCEMonteCarlo.from_matrix(repeat([0.0, 0.0, 1.0], 1, n_sites(H)))
 
 res = run_llg(prob, config0; dt = 1.0, nsteps = 2000, kT = 0.005, seed = 3,
               thermostat = QuantumThermostat(),
@@ -97,7 +97,7 @@ response functions from finite differences across runs (e.g. specific heat from
 ``S(q,\omega)`` machinery is trajectory-level and stays valid on quantum runs; the
 intensities are then **semi-quantum**. The detailed-balance asymmetry is not
 reproduced, and a classical→quantum intensity correction factor must **never** be
-stacked on top of quantum-thermostat data. The `SCEMonteCarlo` Metropolis
+stacked on top of quantum-thermostat data. The `SLCEMonteCarlo` Metropolis
 cross-checks apply only to [`ClassicalThermostat`](@ref) — a deliberate
 MC-mismatch tripwire is part of the gate set.
 

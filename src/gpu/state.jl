@@ -1,5 +1,5 @@
 # Device-resident LLG state (decision record docs/specs/gpu-llg.md). SD owns
-# its device arrays (`SCEMonteCarlo`'s `GPUChainState` carries MC bookkeeping
+# its device arrays (`SLCEMonteCarlo`'s `GPUChainState` carries MC bookkeeping
 # dynamics has no use for); the upstream contract is the shared
 # `GPUTiledHamiltonian`, the stateless `gpu_energy_gradient!` entry point with
 # its `GPUGradientScratch`, and plain `copyto!` transfers.
@@ -23,7 +23,7 @@ carry empty (`0`-sized) filter arrays.
 """
 struct GPULLGState{VC<:AbstractVector{SVector{3,Float64}},
                    VF<:AbstractVector{Float64},VB<:AbstractVector{Int8},
-                   GS<:SCEMonteCarlo.GPUGradientScratch,
+                   GS<:SLCEMonteCarlo.GPUGradientScratch,
                    MX<:AbstractMatrix{Float64},VS<:AbstractVector{_Biquad}}
     dconfig::VC
     depred::VC
@@ -65,7 +65,7 @@ function GPULLGState(gH, prob::LLGProblem, config0::SpinConfig,
     copyto!(dsigma, sigma)
     dactive = KernelAbstractions.allocate(backend, Int8, n)
     copyto!(dactive, Int8[prob.H.site_active[s] ? Int8(1) : Int8(0) for s = 1:n])
-    gsc = SCEMonteCarlo.GPUGradientScratch(gH)
+    gsc = SLCEMonteCarlo.GPUGradientScratch(gH)
     if fstate === nothing
         dxstate = KernelAbstractions.allocate(backend, Float64, 0, 0)
         dsections = KernelAbstractions.allocate(backend, _Biquad, 0)

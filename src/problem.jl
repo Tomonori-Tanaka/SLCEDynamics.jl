@@ -27,7 +27,7 @@ The equation of motion (unit vectors, `G_i = ∂E/∂e_i` in model energy units)
     p_i = g_i / (ħ · magmom_i · (1 + α_i²))    [1/(eV·fs)]
 
 Inactive sites have `p_i = 0` and are additionally skipped bitwise by the
-integrators (mirroring `SCEMonteCarlo`'s frozen-spin convention).
+integrators (mirroring `SLCEMonteCarlo`'s frozen-spin convention).
 """
 struct LLGProblem
     H::TiledHamiltonian
@@ -69,7 +69,7 @@ end
 # Resolve a scalar / per-atom / per-site parameter to a dense per-site vector.
 # Per-atom vectors are tiled through `site_atom` (every supercell copy of one
 # training-cell atom shares its value; assumes the upstream contract that atom
-# indices are contiguous `1:natoms` — a coupled site with SCEMonteCarlo's
+# indices are contiguous `1:natoms` — a coupled site with SLCEMonteCarlo's
 # `site_atom`). When the supercell is trivial the two vector lengths coincide
 # and so do the interpretations.
 function _per_site(H::TiledHamiltonian, x, name::String)::Vector{Float64}
@@ -101,15 +101,15 @@ function Base.show(io::IO, prob::LLGProblem)
 end
 
 """
-    SCEMonteCarlo.total_energy(prob::LLGProblem, config::SpinConfig) -> Float64
+    SLCEMonteCarlo.total_energy(prob::LLGProblem, config::SpinConfig) -> Float64
 
 The dynamical energy of `config`: the SCE energy (`total_energy(prob.H, config)`,
 intercept excluded) plus the Zeeman energy `−Σ_i magmom_i·μ_B·(e_i·b_ext)` over
 active sites. This is the conserved quantity at `α = 0` and the monotonically
 decreasing one at `α > 0` (with `T = 0`).
 """
-SCEMonteCarlo.total_energy(prob::LLGProblem, config::SpinConfig)::Float64 =
-    SCEMonteCarlo.total_energy(prob.H, config) + _zeeman_energy(prob, config)
+SLCEMonteCarlo.total_energy(prob::LLGProblem, config::SpinConfig)::Float64 =
+    SLCEMonteCarlo.total_energy(prob.H, config) + _zeeman_energy(prob, config)
 
 # The Zeeman part alone; `gzee = −magmom·μ_B·b_ext = ∂E_Z/∂e`, so `E_Z = Σ gzee·e`
 # over active sites.

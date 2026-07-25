@@ -1,7 +1,7 @@
 # Stochastic LLG (finite temperature)
 
 ```@meta
-CurrentModule = SCESpinDynamics
+CurrentModule = SLCEDynamics
 ```
 
 Passing a temperature to [`run_llg`](@ref) switches on the thermal field: per active
@@ -24,7 +24,7 @@ site — an undamped spin never thermalizes.
 
 Exactly one of two keywords, the ecosystem-wide rule:
 
-- `temperature` — kelvin, converted internally with `SCEMonteCarlo.KB_EV` (assumes
+- `temperature` — kelvin, converted internally with `SLCEMonteCarlo.KB_EV` (assumes
   an eV-fitted model, the convention for DFT-fitted models);
 - `kT` — ``k_B T`` directly in the model's energy units (theory / test runs).
 
@@ -32,7 +32,7 @@ Exactly one of two keywords, the ecosystem-wide rule:
 
 ## Seeding and the stateless noise stream
 
-Draws are keyed counter-based Philox (`SCEMonteCarlo`'s Random123-gated facade): a
+Draws are keyed counter-based Philox (`SLCEMonteCarlo`'s Random123-gated facade): a
 draw is a **pure function of `(seed, site, step)`**. Consequences worth relying on:
 
 - The trajectory is a pure function of
@@ -44,19 +44,19 @@ draw is a **pure function of `(seed, site, step)`**. Consequences worth relying 
   explicit `seed` for bit-reproducibility (tests, docs, seed ensembles).
 
 ```@example therm
-using SCESpinDynamics, SCEMonteCarlo, SCEFitting
+using SLCEDynamics, SLCEMonteCarlo, SLCE
 import Spglib
 using LinearAlgebra, Random
 
 lat = Lattice(Matrix(1.0 * I(3)))
 cell = Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
-basis = SCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
+basis = SLCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
                                  isotropy = true);
                  backend = SpglibBackend(), images = AllImages())
-model = SCEPredictor(basis, 0.0, [-0.01])
+model = SLCEModel(basis, 0.0, [-0.01])
 H = TiledHamiltonian(model; dims = (2, 2, 2))
 prob = LLGProblem(H; magmom = 2.2, alpha = 0.5)
-config0 = SCEMonteCarlo.from_matrix(randn(Xoshiro(1), 3, n_sites(H)))
+config0 = SLCEMonteCarlo.from_matrix(randn(Xoshiro(1), 3, n_sites(H)))
 
 res = run_llg(prob, config0; dt = 0.5, nsteps = 4000, kT = 0.01, seed = 42,
               observables = standard_observables(H))
@@ -67,7 +67,7 @@ res.energies == res2.energies          # bitwise, independent of the task count
 
 ## Equilibrium statistics
 
-[`equilibrium_stats`](@ref) bridges the recorded time series to `SCEMonteCarlo`'s
+[`equilibrium_stats`](@ref) bridges the recorded time series to `SLCEMonteCarlo`'s
 binning/jackknife machinery, so the **same** `Evaluable` definitions the MC drivers
 accept (specific heat, susceptibility, Binder, user-defined) work on sLLG data:
 
@@ -85,7 +85,7 @@ stats = equilibrium_stats(res)         # discards the first half by default
   half). The sLLG equilibration time scales like ``1/\alpha`` — inspect the energy
   series when in doubt.
 - The default evaluables need `:energy`, `:energy2`, `:m2`, `:m4`, `:absm` among the
-  recorded observables — record `SCEMonteCarlo.standard_observables(H)` in the run.
+  recorded observables — record `SLCEMonteCarlo.standard_observables(H)` in the run.
 
 !!! warning "O(dt) equilibrium bias"
     The Heun-family sLLG has weak order 1, so equilibrium averages carry an
@@ -93,7 +93,7 @@ stats = equilibrium_stats(res)         # discards the first half by default
 
 ## Cross-validation against Metropolis
 
-The sLLG equilibrium is gated in the test suite against `SCEMonteCarlo.run_mc`
+The sLLG equilibrium is gated in the test suite against `SLCEMonteCarlo.run_mc`
 Metropolis averages (``\langle E\rangle``, spin correlators, at 3σ with
 τ_int-aware errors on both sides), and the noise parametrization is pinned by an
 α-independence Boltzmann gate — a wrong ``(1+\alpha^2)`` would be a

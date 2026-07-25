@@ -1,7 +1,7 @@
 # The dynamical structure factor S(q,ω)
 
 ```@meta
-CurrentModule = SCESpinDynamics
+CurrentModule = SLCEDynamics
 ```
 
 [`structure_factor`](@ref) estimates the classical dynamical spin structure factor
@@ -49,19 +49,19 @@ An 8-cell tiling of a ferromagnetic chain along ``x`` (the cell is elongated in
 fluctuations populate every magnon mode; light damping keeps the modes sharp:
 
 ```@example sqw
-using SCESpinDynamics, SCEMonteCarlo, SCEFitting
+using SLCEDynamics, SLCEMonteCarlo, SLCE
 import Spglib
 using LinearAlgebra, Random
 
 lat = Lattice(Matrix(Diagonal([1.0, 4.0, 4.0])))    # a chain: only ±x in range
 cell = Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
-basis = SCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
+basis = SLCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
                                  isotropy = true);
                  backend = SpglibBackend(), images = AllImages())
-model = SCEPredictor(basis, 0.0, [-0.01])
+model = SLCEModel(basis, 0.0, [-0.01])
 H = TiledHamiltonian(model; dims = (8, 1, 1))       # 8 sites along the chain
 prob = LLGProblem(H; magmom = 2.2, alpha = 0.05)
-config0 = SCEMonteCarlo.from_matrix(repeat([0.0, 0.0, 1.0], 1, n_sites(H)))
+config0 = SLCEMonteCarlo.from_matrix(repeat([0.0, 0.0, 1.0], 1, n_sites(H)))
 
 res = run_llg(prob, config0; dt = 1.0, nsteps = 4096, kT = 0.002, seed = 5,
               measure_interval = 4,
@@ -133,5 +133,5 @@ trajectory:
 
 ```@example sqw
 tr = trajectory(res)
-SCESpinDynamics.channel_sumrule(tr.traj, tr.times, H, cell)
+SLCEDynamics.channel_sumrule(tr.traj, tr.times, H, cell)
 ```

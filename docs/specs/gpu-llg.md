@@ -1,7 +1,7 @@
 # GPU LLG — decision record
 
 Settled by a two-designer + adversarial-review pass (2026-07-19); the upstream
-half (the device all-site SCE gradient) is SCEMonteCarlo's G7 record
+half (the device all-site SCE gradient) is SLCEMonteCarlo's G7 record
 (`docs/specs/gpu-prototype.md` there). This file records the consumer-side
 decisions; implement/change against it.
 
@@ -14,10 +14,10 @@ decisions; implement/change against it.
   documented "pure function of `(prob, config0, dt, nsteps, integrator, seed)`,
   bit-identical for any `ntasks`" contract, which the GPU path cannot honor —
   its trajectory additionally depends on (backend, `workgroupsize`).
-- `gH = SCEMonteCarlo.GPUTiledHamiltonian(backend, prob.H)` is caller-built and
+- `gH = SLCEMonteCarlo.GPUTiledHamiltonian(backend, prob.H)` is caller-built and
   reused (table upload is seconds at production sizes); validated against
   `prob.H` (identity or `model_fingerprint`).
-- The upstream boundary: `SCEMonteCarlo.gpu_energy_gradient!` (+
+- The upstream boundary: `SLCEMonteCarlo.gpu_energy_gradient!` (+
   `GPUGradientScratch`) delivers ONLY the tangent-projected SCE gradient; SD's
   stage kernels add the unprojected `gzee` and the thermal `gth` exactly as the
   host `_omega` does. No CUDA dependency anywhere (KernelAbstractions hard dep;

@@ -10,7 +10,7 @@ Fields:
 
 - `times` [fs], `energies` — the dynamical energy (SCE + Zeeman),
 - `mean_spins` — the unweighted mean direction over **active** sites (the
-  `SCEMonteCarlo` magnetization convention),
+  `SLCEMonteCarlo` magnetization convention),
 - `series::Dict{Symbol,Matrix{Float64}}` — one `ncomp × n_measurements` matrix
   per user observable (see `run_llg`'s `observables`), columns aligned with
   `times`,
@@ -121,7 +121,7 @@ matches the returned `config` exactly).
   never thermalizes). One Gaussian 3-vector per active site per step, shared by
   both integrator stages (Stratonovich). To feed [`equilibrium_stats`](@ref)'s
   default evaluables (specific heat &c.), record
-  `SCEMonteCarlo.standard_observables(prob.H)` here.
+  `SLCEMonteCarlo.standard_observables(prob.H)` here.
 - `seed`: the noise seed (thermostatted runs only; default: a fresh
   `rand(UInt64)`, recorded in the result). Draws are keyed counter-based Philox
   — the trajectory is a pure function of
@@ -134,16 +134,16 @@ matches the returned `config` exactly).
   white draws, so a same-seed classical and quantum run share one underlying
   white realization.
 - `integrator`: [`DepondtMertens`](@ref) (default) or [`HeunProjected`](@ref).
-- `observables`: a vector of `SCEMonteCarlo.Observable`s — the SAME definitions
+- `observables`: a vector of `SLCEMonteCarlo.Observable`s — the SAME definitions
   the Monte Carlo drivers accept (`Observable(name, ncomp, f)` with
-  `f(config, energy, H)`, including `SCEMonteCarlo.standard_observables(H)` and
+  `f(config, energy, H)`, including `SLCEMonteCarlo.standard_observables(H)` and
   any user-defined ones). Per the `Observable` contract, `energy` is the **SCE**
   energy (model units, intercept excluded, Zeeman not included) so a definition
   measures identical values on the same configuration in both packages. Each
   observable's time series lands in `LLGResult.series[name]` as an
   `ncomp × n_measurements` matrix. Names must be unique.
 - `ntasks`: task count for the two per-step field evaluations
-  (`SCEMonteCarlo.energy_gradient!`) — bit-identical results for any value.
+  (`SLCEMonteCarlo.energy_gradient!`) — bit-identical results for any value.
 - `renorm_interval`: every that many steps, active spins are renormalized to unit
   length (`0` disables). Depondt–Mertens preserves norms to rounding, so this only
   caps the `~ε√nsteps` rounding walk of very long runs; `HeunProjected`
@@ -284,7 +284,7 @@ function _measure!(energies::Vector{Float64}, means::Vector{SVector{3,Float64}},
                    observables::Vector{Observable}, k::Int, t::Float64,
                    times::Vector{Float64}, prob::LLGProblem,
                    config::SpinConfig)::Nothing
-    e_sce = SCEMonteCarlo.total_energy(prob.H, config)
+    e_sce = SLCEMonteCarlo.total_energy(prob.H, config)
     times[k] = t
     energies[k] = e_sce + _zeeman_energy(prob, config)
     means[k] = _mean_active(prob.H, config)

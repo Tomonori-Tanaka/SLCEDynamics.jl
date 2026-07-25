@@ -2,7 +2,7 @@
 # docs/specs/quantum-thermostat.md Q4; run on kugui's accelerator queue with
 # SCE_REQUIRE_CUDA=1).
 #
-#   julia --project=@sce -t 8 bench/bench_gpu_qtb.jl <model.toml> [dims]
+#   julia --project=@slce -t 8 bench/bench_gpu_qtb.jl <model.toml> [dims]
 #
 # Sections: (1) classical run with the zero-sized filter allocations (the
 # refactor must not disturb the classical device path); (2) quantum end-to-end
@@ -11,11 +11,11 @@
 # identity for the quantum filter round-trip; (4) classical-vs-quantum step
 # timing (cascade overhead readout).
 
-using SCEFitting, SCEMonteCarlo, SCESpinDynamics
+using SLCE, SLCEMonteCarlo, SLCEDynamics
 using KernelAbstractions: KernelAbstractions, CPU
 using StaticArrays, LinearAlgebra, Printf, Random
-const MC = SCEMonteCarlo
-const SD = SCESpinDynamics
+const MC = SLCEMonteCarlo
+const SD = SLCEDynamics
 
 const REQUIRE_CUDA = get(ENV, "SCE_REQUIRE_CUDA", "0") == "1"
 HAVE_CUDA = false
@@ -34,7 +34,7 @@ REQUIRE_CUDA && !HAVE_CUDA && error("SCE_REQUIRE_CUDA=1 but CUDA is not function
 
 modelpath = length(ARGS) >= 1 ? ARGS[1] : error("usage: bench_gpu_qtb.jl model.toml [n]")
 n_dim = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 8
-model = SCEFitting.load(SCEPredictor, modelpath)
+model = SLCE.load(SLCEModel, modelpath)
 H = TiledHamiltonian(model; dims = (n_dim, n_dim, n_dim))
 println("model: ", modelpath, "  dims = ", (n_dim, n_dim, n_dim),
         "  n_sites = ", H.n_sites)

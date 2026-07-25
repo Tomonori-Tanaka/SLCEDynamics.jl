@@ -1,7 +1,7 @@
 # GPU LLG gates, all on the KernelAbstractions CPU backend (CI needs no GPU;
 # decision record docs/specs/gpu-llg.md). The bitwise tier compares the device
 # path against a composite keyed reference — the upstream gradient lane
-# reference (`SCEMonteCarlo._gradient_lane_ref!`) plus the literal host
+# reference (`SLCEMonteCarlo._gradient_lane_ref!`) plus the literal host
 # `_omega`/`_rotate` stage expressions — never against the CPU `run_llg` (whose
 # gradient fold order differs by design). CPU↔GPU comparisons are tolerance
 # gates on non-chaotic fixtures.

@@ -1,5 +1,5 @@
 # User-defined observables: `run_llg` accepts the SAME `Observable(name, ncomp, f)`
-# definitions as the SCEMonteCarlo drivers (`f(config, energy, H)` with the SCE
+# definitions as the SLCEMonteCarlo drivers (`f(config, energy, H)` with the SCE
 # energy) and records one `ncomp × n_measurements` time-series matrix per name.
 
 @testset "observables" begin

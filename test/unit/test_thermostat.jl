@@ -2,7 +2,7 @@
 # agreement with the analytic quadrature AND α-independence (a wrong (1+α²) in the
 # fluctuation–dissipation constant shows up as a (1+α²)× temperature error — 2×
 # at α = 1, far above the statistical resolution here) — plus noise determinism,
-# validation, and (d) the cross-package equilibrium gate vs SCEMonteCarlo
+# validation, and (d) the cross-package equilibrium gate vs SLCEMonteCarlo
 # Metropolis in test order.
 
 @testset "stochastic LLG (gates e, d)" begin

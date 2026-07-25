@@ -1,7 +1,7 @@
 # The GPU path
 
 ```@meta
-CurrentModule = SCESpinDynamics
+CurrentModule = SLCEDynamics
 ```
 
 [`run_llg_gpu`](@ref) runs the same physics on a KernelAbstractions device: both
@@ -12,14 +12,14 @@ the result unchanged. It is exported (since the A100 go/no-go and the
 quantum-device smoke both passed):
 
 ```julia
-gH  = GPUTiledHamiltonian(backend, prob.H)     # exported by SCEMonteCarlo; build ONCE
+gH  = GPUTiledHamiltonian(backend, prob.H)     # exported by SLCEMonteCarlo; build ONCE
 res = run_llg_gpu(prob, config0, gH; dt = 0.05, nsteps = 10^6,
                   kT = 0.02, seed = 1, checkpoint = "llg_gpu.jld2",
                   checkpoint_interval = 50_000)
 ```
 
 `gH` is caller-built and reused across runs — the table upload is seconds at
-production sizes. The upstream device gradient is `SCEMonteCarlo`'s
+production sizes. The upstream device gradient is `SLCEMonteCarlo`'s
 `gpu_energy_gradient!`; there is no CUDA dependency anywhere — the caller passes
 the backend object (e.g. `CUDA.CUDABackend()`).
 
@@ -49,20 +49,20 @@ suite compares it bitwise against a composite keyed reference, no GPU required. 
 is also the way to try the API locally:
 
 ```@example gpu
-using SCESpinDynamics, SCEMonteCarlo, SCEFitting
+using SLCEDynamics, SLCEMonteCarlo, SLCE
 import Spglib
 using LinearAlgebra, Random
-import SCESpinDynamics as SD    # only for the KernelAbstractions module below
+import SLCEDynamics as SD    # only for the KernelAbstractions module below
 
 lat = Lattice(Matrix(1.0 * I(3)))
 cell = Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
-basis = SCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
+basis = SLCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
                                  isotropy = true);
                  backend = SpglibBackend(), images = AllImages())
-model = SCEPredictor(basis, 0.0, [-0.01])
+model = SLCEModel(basis, 0.0, [-0.01])
 H = TiledHamiltonian(model; dims = (2, 2, 2))
 prob = LLGProblem(H; magmom = 2.2, alpha = 0.5)
-config0 = SCEMonteCarlo.from_matrix(randn(Xoshiro(1), 3, n_sites(H)))
+config0 = SLCEMonteCarlo.from_matrix(randn(Xoshiro(1), 3, n_sites(H)))
 
 backend = SD.KernelAbstractions.CPU()          # the KA module SD itself uses
 gH = GPUTiledHamiltonian(backend, H)

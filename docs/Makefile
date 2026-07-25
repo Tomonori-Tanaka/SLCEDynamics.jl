@@ -1,13 +1,13 @@
-# Documentation build for SCESpinDynamics.jl.
+# Documentation build for SLCEDynamics.jl.
 #
 #   make build        build the HTML site into build/
 #   make serve        build, then serve it locally with live reload (LiveServer.jl)
 #   make open         open the built site in a browser
 #   make clean        remove the build/ output
 #
-# The first run resolves docs/Project.toml (Documenter + LiveServer + SCESpinDynamics +
-# SCEFitting + SCEMonteCarlo, all by path). The siblings must sit at
-# ../../SCEFitting.jl and ../../SCEMonteCarlo.jl.
+# The first run resolves docs/Project.toml (Documenter + LiveServer + SLCEDynamics +
+# SLCE + SLCEMonteCarlo, all by path). The siblings must sit at
+# ../../SLCE.jl and ../../SLCEMonteCarlo.jl.
 
 .PHONY: build serve open clean help
 

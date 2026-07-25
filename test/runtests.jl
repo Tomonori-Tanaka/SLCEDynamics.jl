@@ -2,7 +2,7 @@ using Test
 
 const TEST_MODE = get(ENV, "TEST_MODE", "default")
 
-@testset "SCESpinDynamics.jl" begin
+@testset "SLCEDynamics.jl" begin
     if TEST_MODE in ("default", "all", "unit")
         include("unit/fixtures.jl")
         include("unit/test_units.jl")

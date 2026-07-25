@@ -1,7 +1,7 @@
 # Checkpointing and restart
 
 ```@meta
-CurrentModule = SCESpinDynamics
+CurrentModule = SLCEDynamics
 ```
 
 Long runs checkpoint to a JLD2 file and restart **bit-identically** — the resumed
@@ -25,7 +25,7 @@ per checkpoint path — two concurrent runs must not share one.
 
 - The caller re-supplies the `LLGProblem` and any custom `observables` — function
   objects are not serialized. The file stores the **model fingerprint**
-  (`SCEMonteCarlo.model_fingerprint`), the problem parameters
+  (`SLCEMonteCarlo.model_fingerprint`), the problem parameters
   (`magmom`/`alpha`/`g`/`b_ext`, compared on active sites), and the observable
   names/component counts, and errors on any mismatch — a resume against different
   physics never silently continues.
@@ -47,7 +47,7 @@ per checkpoint path — two concurrent runs must not share one.
 The thermal noise is a stateless pure function of `(seed, site, step)`, so **no RNG
 state exists to store** — unlike the MC checkpoints, an LLG file carries no
 generator words at all. The configuration is restored *verbatim* (deliberately not
-through `SCEMonteCarlo.from_matrix`, whose renormalization would perturb a chaotic
+through `SLCEMonteCarlo.from_matrix`, whose renormalization would perturb a chaotic
 trajectory by ULPs), and every per-step effect — noise counter, renormalization
 cadence, measurement grid — is a pure function of the absolute step index.
 

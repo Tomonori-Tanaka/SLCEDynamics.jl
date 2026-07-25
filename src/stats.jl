@@ -1,7 +1,7 @@
 # Equilibrium statistics of a thermostatted trajectory: the bridge from
-# `LLGResult.series` time series to `SCEMonteCarlo`'s binning/jackknife machinery,
+# `LLGResult.series` time series to `SLCEMonteCarlo`'s binning/jackknife machinery,
 # so the SAME `Evaluable` definitions (specific heat, susceptibility, Binder …)
-# work on sLLG data. Built strictly on SCEMonteCarlo's public tier
+# work on sLLG data. Built strictly on SLCEMonteCarlo's public tier
 # (`LogBinner`/`BinStore`/`bin_means`/`jackknife`/`std_error`/`tau_int`).
 
 """
@@ -13,8 +13,8 @@
 
 Long-time (equilibrium) averages of a **thermostatted** [`run_llg`](@ref) result:
 every recorded observable series becomes an `ObservableStat` (autocorrelation-aware
-mean/error/τ_int via `SCEMonteCarlo.LogBinner`), and each `Evaluable` — the same
-definitions the MC drivers accept, e.g. `SCEMonteCarlo.standard_evaluables()` —
+mean/error/τ_int via `SLCEMonteCarlo.LogBinner`), and each `Evaluable` — the same
+definitions the MC drivers accept, e.g. `SLCEMonteCarlo.standard_evaluables()` —
 is jackknifed over equal-weight bins of its (scalar) input observables, with
 `f(means, kT, n)` receiving the run's `kT` and its active-site count.
 
@@ -24,7 +24,7 @@ is jackknifed over equal-weight bins of its (scalar) input observables, with
 - `nbins`: jackknife bin count (a trailing remainder is dropped, as in the MC
   drivers). An evaluable needs every input among the recorded observables
   (else: `ArgumentError` — pass them to `run_llg`'s `observables`, e.g.
-  `SCEMonteCarlo.standard_observables(H)`) and ≥ 2 completed bins (else its
+  `SLCEMonteCarlo.standard_observables(H)`) and ≥ 2 completed bins (else its
   stat is `NaN`).
 
 Statistical caveat (SPEC.md): the Heun-family sLLG has weak order 1, so

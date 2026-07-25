@@ -1,7 +1,7 @@
-# SCESpinDynamics.jl — architecture
+# SLCEDynamics.jl — architecture
 
 Atomistic spin dynamics (LLG / stochastic LLG) on fitted SCE models. Consumes
-`SCEMonteCarlo`'s `TiledHamiltonian` and its public all-site gradient
+`SLCEMonteCarlo`'s `TiledHamiltonian` and its public all-site gradient
 `energy_gradient!` — never SCE internals.
 
 ## Physics
@@ -28,11 +28,11 @@ boundary (`MU_B_EV_T`). Anchor: g = 2, 1 T → 27.9925 GHz (`test_units.jl`).
 
 | File | Contents |
 |---|---|
-| `src/units.jl` | `HBAR_EV_FS` (exact SI ratio), `MU_B_EV_T` (CODATA-2018). `KB_EV`/`resolve_kt` are reused from `SCEMonteCarlo`, never redefined |
-| `src/problem.jl` | `LLGProblem` (Hamiltonian + per-site `magmom`/`alpha`/`g` + `b_ext`; prefactor `pref` and Zeeman gradient `gzee` resolved at construction; scalar / per-atom / per-site parameter resolution via `site_atom`), `SCEMonteCarlo.total_energy(::LLGProblem, config)` = SCE + Zeeman |
+| `src/units.jl` | `HBAR_EV_FS` (exact SI ratio), `MU_B_EV_T` (CODATA-2018). `KB_EV`/`resolve_kt` are reused from `SLCEMonteCarlo`, never redefined |
+| `src/problem.jl` | `LLGProblem` (Hamiltonian + per-site `magmom`/`alpha`/`g` + `b_ext`; prefactor `pref` and Zeeman gradient `gzee` resolved at construction; scalar / per-atom / per-site parameter resolution via `site_atom`), `SLCEMonteCarlo.total_energy(::LLGProblem, config)` = SCE + Zeeman |
 | `src/integrators.jl` | `DepondtMertens` (rotation Heun, norm-exact, default), `HeunProjected` (independent cross-check); `_omega` / `_rotate` / `_step!` |
-| `src/run.jl` | `run_llg` driver (fixed step; measurements at step 0, every `measure_interval`, and always at the final step) + `LLGResult`; user observables — the SAME `SCEMonteCarlo.Observable(name, ncomp, f)` definitions the MC drivers accept (`f(config, energy, H)`, fed the **SCE** energy so a definition measures identically in both packages) — recorded as `ncomp × n_measurements` time-series matrices in `LLGResult.series`; the shared stepping loop `_llg_loop!` (also the resume entry) |
-| `src/checkpoint.jl` | JLD2 checkpoint/resume (schema below) — `run_llg(...; checkpoint, checkpoint_interval)` writer + `resume(path, prob::LLGProblem)` (a method of `SCEMonteCarlo.resume`, re-exported) |
+| `src/run.jl` | `run_llg` driver (fixed step; measurements at step 0, every `measure_interval`, and always at the final step) + `LLGResult`; user observables — the SAME `SLCEMonteCarlo.Observable(name, ncomp, f)` definitions the MC drivers accept (`f(config, energy, H)`, fed the **SCE** energy so a definition measures identically in both packages) — recorded as `ncomp × n_measurements` time-series matrices in `LLGResult.series`; the shared stepping loop `_llg_loop!` (also the resume entry) |
+| `src/checkpoint.jl` | JLD2 checkpoint/resume (schema below) — `run_llg(...; checkpoint, checkpoint_interval)` writer + `resume(path, prob::LLGProblem)` (a method of `SLCEMonteCarlo.resume`, re-exported) |
 | `src/fft.jl` | own power-of-two radix-2 FFT + Hann/rect windows (deliberately not FFTW — determinism; gated against a reference DFT) |
 | `src/gpu/{state,kernels,run}.jl` | the GPU path: `GPULLGState`, the stage/noise/renorm kernels (literal `_omega`/`_rotate`/`_fill_noise!` ports), `run_llg_gpu`/`_llg_loop_gpu!`/the device `resume` method |
 | `src/sqw.jl` | S(q,ω): `trajectory_observable`/`trajectory`, `q_path`, `structure_factor` (4 methods) → `SQWResult` (full 3×3 Hermitian tensor + separated elastic tensor), reductions `sqw_diag`/`sqw_trace`/`sqw_perp`/`sqw_plusminus`/`sqw_elastic`, axis helpers, `channel_sumrule` |
@@ -41,7 +41,7 @@ boundary (`MU_B_EV_T`). Anchor: g = 2, 1 T → 27.9925 GHz (`test_units.jl`).
 
 - **Inactive sites** (`H.site_active`): frozen bitwise — skipped by both
   integrator stages, no Zeeman, excluded from `mean_spins`, `pref = 0`. Mirrors
-  `SCEMonteCarlo`'s frozen-spin convention. `magmom` is validated (> 0, finite)
+  `SLCEMonteCarlo`'s frozen-spin convention. `magmom` is validated (> 0, finite)
   on active sites only.
 - **Gradient contract**: `energy_gradient!` returns the tangent-projected
   `G_SCE` (`e·G = 0` exact). The constant Zeeman gradient is deliberately NOT
@@ -51,7 +51,7 @@ boundary (`MU_B_EV_T`). Anchor: g = 2, 1 T → 27.9925 GHz (`test_units.jl`).
 - **Determinism**: the deterministic integrators consume no RNG; trajectories
   are bit-identical for any `ntasks` (inherited from `energy_gradient!`'s
   task-count independence + serial per-site update loops). Same P6 scope as
-  `SCEMonteCarlo` (same package + Julia version).
+  `SLCEMonteCarlo` (same package + Julia version).
 - **Time** is `step × dt`, never an accumulated float.
 - Cost: one step = 2 field evaluations ≈ 2 Metropolis sweeps.
 
@@ -76,7 +76,7 @@ parametrization (it maps to García-Palacios–Lázaro under `γ_L = γ/(1+α²)
 `λ = α`; `src/noise.jl`). The SAME draw feeds both Heun stages (Stratonovich).
 Requires `α > 0` on every active site. Weak order 1 ⇒ O(dt) equilibrium bias.
 
-Noise draws are keyed philox4x32-10 through `SCEMonteCarlo.philox_block` /
+Noise draws are keyed philox4x32-10 through `SLCEMonteCarlo.philox_block` /
 `philox_normal2` (public facade, Random123 known-answer-gated): counter
 `(site, step_lo32, slot ∈ {0,1}, 0x5344_0000 | step_hi16)` — the nonzero "SD"
 word-4 tag keeps every stream disjoint from MC's GPU streams under a shared
@@ -86,7 +86,7 @@ trajectories stay bit-identical for any `ntasks`. Default `seed = rand(UInt64)`
 (the sibling convention), recorded in `LLGResult.seed`.
 
 `equilibrium_stats(res; evaluables, discard, nbins)` (`src/stats.jl`) bridges
-the recorded series to `SCEMonteCarlo`'s public binning machinery
+the recorded series to `SLCEMonteCarlo`'s public binning machinery
 (`LogBinner`/`BinStore`/`bin_means`/`jackknife`): raw observables get
 τ_int-aware `ObservableStat`s, and the SAME `Evaluable` definitions the MC
 drivers accept (specific heat, susceptibility, Binder, user-defined) are
@@ -108,14 +108,14 @@ atomic temp-file + `mv`) every `n` steps (`0` ⇒ completion only) and always at
 completion. Because the noise is a stateless pure function of `(seed, site,
 step)`, **no RNG state is stored** (schema v3's quantum `state/filter` is
 the one carried array, restored verbatim): the file carries the model
-fingerprint (`SCEMonteCarlo.model_fingerprint`, the shared identity check), the
+fingerprint (`SLCEMonteCarlo.model_fingerprint`, the shared identity check), the
 trajectory-defining parameters (problem arrays, `dt`, `nsteps`,
 `measure_interval`, `renorm_interval`, integrator name, `kT`, `seed`), the
 observable names/ncomps, the completed `step`, the bitwise configuration, and
 the measurements recorded so far.
 
 `resume(path, prob; observables, nsteps, …)` — a method of
-`SCEMonteCarlo.resume` — validates everything, restores the configuration
+`SLCEMonteCarlo.resume` — validates everything, restores the configuration
 **verbatim** (never through `from_matrix`, whose renormalization would perturb a
 chaotic trajectory by ULPs), and continues the shared loop: bit-identical to the
 uninterrupted run. A completed file reconstructs its `LLGResult` without
@@ -145,7 +145,7 @@ sign and normalization frozen by exact deterministic gates (`test_sqw_gates.jl`,
   In-RAM cost `24·n·n_meas` bytes — keep ≲ 10 GB (a chunked writer and a
   q-projected recorder are deferred seams).
 - **q**: fractional coordinates in the training-cell reciprocal lattice
-  (`q_cart = 2π·Bᵀ·f`; SCEFitting's `reciprocal` carries no 2π — it enters here
+  (`q_cart = 2π·Bᵀ·f`; SLCE's `reciprocal` carries no 2π — it enters here
   exactly once). Only supercell-commensurate q (`f_i·N_i ∈ ℤ`) are
   representable: `structure_factor` throws on others; `q_path(…; dims)` snaps
   loudly (`qs` vs `qs_requested`). Phases need no Cartesian positions —
@@ -189,9 +189,9 @@ sign and normalization frozen by exact deterministic gates (`test_sqw_gates.jl`,
 
 `run_llg_gpu(prob, config0, gH; …)` (exported since 2026-07-19 — A100 GO
 plus the quantum-device smoke;
-decision record `docs/specs/gpu-llg.md` + SCEMonteCarlo's G7) runs both
+decision record `docs/specs/gpu-llg.md` + SLCEMonteCarlo's G7) runs both
 integrators, deterministic and sLLG, on a KernelAbstractions backend over
-SCEMonteCarlo's device gradient (`gpu_energy_gradient!`). Key properties:
+SLCEMonteCarlo's device gradient (`gpu_energy_gradient!`). Key properties:
 
 - The noise stream is the SAME stateless Philox `(seed, site, step)` as the CPU
   path — a same-seed CPU and GPU run are one stochastic realization, differing

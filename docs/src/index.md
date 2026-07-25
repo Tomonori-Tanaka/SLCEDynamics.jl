@@ -1,9 +1,9 @@
-# SCESpinDynamics.jl
+# SLCEDynamics.jl
 
 Atomistic spin dynamics for fitted SCE (symmetry-adapted cluster expansion) models
-from `SCEFitting.jl`: integrate the Landau–Lifshitz–Gilbert equation — deterministic,
+from `SLCE.jl`: integrate the Landau–Lifshitz–Gilbert equation — deterministic,
 stochastic (classical white noise), or semi-quantum (colored-noise thermostat) — on
-`SCEMonteCarlo.jl`'s tiled supercell Hamiltonian, with equilibrium statistics that
+`SLCEMonteCarlo.jl`'s tiled supercell Hamiltonian, with equilibrium statistics that
 reuse the MC observable machinery, the dynamical structure factor ``S(q,\omega)``,
 bit-reproducible checkpoint/restart, and a KernelAbstractions GPU path.
 
@@ -11,11 +11,11 @@ bit-reproducible checkpoint/restart, and a KernelAbstractions GPU path.
 
 | Package | Role |
 |---|---|
-| `SCEFitting.jl` | fits the SCE model (the input here) |
-| `SCEMonteCarlo.jl` | equilibrium thermodynamics: Metropolis, annealing, replica exchange |
-| **`SCESpinDynamics.jl`** | real-time dynamics: LLG / sLLG, ``S(q,\omega)``, QTB noise |
+| `SLCE.jl` | fits the SCE model (the input here) |
+| `SLCEMonteCarlo.jl` | equilibrium thermodynamics: Metropolis, annealing, replica exchange |
+| **`SLCEDynamics.jl`** | real-time dynamics: LLG / sLLG, ``S(q,\omega)``, QTB noise |
 
-The fitted model enters only through `SCEMonteCarlo`'s `TiledHamiltonian` and its
+The fitted model enters only through `SLCEMonteCarlo`'s `TiledHamiltonian` and its
 exact all-site gradient `energy_gradient!` — never through SCE internals. Observable
 and `Evaluable` definitions written for the MC drivers plug into the dynamics
 drivers unchanged (the same bindings are re-exported here).
@@ -32,7 +32,7 @@ The package follows the sibling packages' discipline:
   bit-reproducible for any task count and checkpoints never store RNG state.
 - **Checkpoints resume bit-identically** — the resumed (or *extended*) trajectory
   equals the uninterrupted run's exactly, tested with `==`, not `≈`.
-- The scope is one package + Julia version (`SCEMonteCarlo`'s P6 discipline); the
+- The scope is one package + Julia version (`SLCEMonteCarlo`'s P6 discipline); the
   GPU path adds (backend, workgroupsize) to its bitwise contract.
 
 ## Features
@@ -42,7 +42,7 @@ The package follows the sibling packages' discipline:
 - Integrators: Depondt–Mertens (rotation-based Heun, norm-exact — the default) and
   projected Heun (an independent cross-check).
 - Stochastic LLG validated against analytic Boltzmann distributions and
-  `SCEMonteCarlo` Metropolis equilibrium; [`equilibrium_stats`](@ref) reuses the MC
+  `SLCEMonteCarlo` Metropolis equilibrium; [`equilibrium_stats`](@ref) reuses the MC
   binning/jackknife machinery.
 - A semi-quantum colored-noise thermostat ([`QuantumThermostat`](@ref)) — magnon
   occupations follow Bose–Einstein statistics instead of classical equipartition.

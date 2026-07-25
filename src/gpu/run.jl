@@ -20,7 +20,7 @@ stream (same `(seed, site, step)` draws as the CPU path — a same-seed CPU and
 GPU run are the same stochastic realization, differing only through
 gradient/rotation roundoff).
 
-`gH` is `SCEMonteCarlo.GPUTiledHamiltonian(backend, prob.H)` — build it once
+`gH` is `SLCEMonteCarlo.GPUTiledHamiltonian(backend, prob.H)` — build it once
 and reuse it across runs (the table upload is seconds at production sizes).
 
 `thermostat` accepts `QuantumThermostat()` with the same contract as
@@ -191,7 +191,7 @@ the SAME physical realization continued exactly from a valid state
 single-backend run; the switch must be a deliberate, loud decision (a silent
 backend change once cost a walltime — see the GPU decision records).
 """
-function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem, gH;
+function SLCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem, gH;
         observables::Vector{Observable} = Observable[],
         nsteps::Union{Nothing,Integer} = nothing,
         allow_compute_switch::Bool = false,

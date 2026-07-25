@@ -19,11 +19,11 @@
 # fit error (both are part of the measured value; see test/unit/qt_predictions.jl
 # for the exact machinery), so a few-percent gap to the measurement is expected.
 
-using SCESpinDynamics, SCEMonteCarlo, SCEFitting
-using Spglib: Spglib          # activates SCEFitting's SpglibBackend extension
+using SLCEDynamics, SLCEMonteCarlo, SLCE
+using Spglib: Spglib          # activates SLCE's SpglibBackend extension
 using LinearAlgebra, StaticArrays
 
-const MC = SCEMonteCarlo
+const MC = SLCEMonteCarlo
 
 dims = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 4
 nsteps = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 400_000
@@ -31,10 +31,10 @@ nsteps = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 400_000
 # --- model: 1-atom cubic cell, NN Heisenberg (the documentation model) --------
 lat = Lattice(Matrix(1.0 * I(3)))
 cell = Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
-basis = SCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
+basis = SLCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
                                  isotropy = true);
                  backend = SpglibBackend(), images = AllImages())
-model = SCEPredictor(basis, 0.0, fill(-0.01, n_salcs(basis)))
+model = SLCEModel(basis, 0.0, fill(-0.01, n_salcs(basis)))
 H = TiledHamiltonian(model; dims = (dims, dims, dims))
 N = n_sites(H)
 

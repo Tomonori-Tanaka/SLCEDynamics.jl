@@ -1,38 +1,38 @@
 # Getting started
 
 ```@meta
-CurrentModule = SCESpinDynamics
+CurrentModule = SLCEDynamics
 ```
 
 ## Install
 
-The package lives alongside its model source `SCEFitting.jl` and its Hamiltonian /
-gradient layer `SCEMonteCarlo.jl`; during development all three are path-devs:
+The package lives alongside its model source `SLCE.jl` and its Hamiltonian /
+gradient layer `SLCEMonteCarlo.jl`; during development all three are path-devs:
 
 ```julia
 using Pkg
-Pkg.develop(path = "path/to/SCEFitting.jl")
-Pkg.develop(path = "path/to/SCEMonteCarlo.jl")
-Pkg.develop(path = "path/to/SCESpinDynamics.jl")
+Pkg.develop(path = "path/to/SLCE.jl")
+Pkg.develop(path = "path/to/SLCEMonteCarlo.jl")
+Pkg.develop(path = "path/to/SLCEDynamics.jl")
 ```
 
 ## From a fitted model to a trajectory
 
 In production the model comes from a fitted file
-(`SCEFitting.load(SCEPredictor, "model.toml")`). Here we build a small reference
+(`SLCE.load(SLCEModel, "model.toml")`). Here we build a small reference
 model through the same fitted-model surface — the classical Heisenberg ferromagnet
 on a simple cubic lattice, one coefficient (`< 0` ⇒ ferromagnetic):
 
 ```@example gs
-using SCESpinDynamics, SCEMonteCarlo, SCEFitting
-import Spglib                      # activates SCEFitting's SpglibBackend extension
+using SLCEDynamics, SLCEMonteCarlo, SLCE
+import Spglib                      # activates SLCE's SpglibBackend extension
 using LinearAlgebra
 
 lat = Lattice(Matrix(1.0 * I(3)))
 cell = Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
 spec = BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1], isotropy = true)
-basis = SCEBasis(cell, spec; backend = SpglibBackend(), images = AllImages())
-model = SCEPredictor(basis, 0.0, [-0.01])
+basis = SLCEBasis(cell, spec; backend = SpglibBackend(), images = AllImages())
+model = SLCEModel(basis, 0.0, [-0.01])
 
 H = TiledHamiltonian(model; dims = (2, 2, 2))       # training cell → 2×2×2 supercell
 prob = LLGProblem(H; magmom = 2.2, alpha = 0.5)     # magmom in μ_B
@@ -51,7 +51,7 @@ ground state — a deterministic run (no temperature) consumes no RNG at all:
 using Random
 
 rng = Xoshiro(1)
-config0 = SCEMonteCarlo.from_matrix(randn(rng, 3, n_sites(H)))  # random unit spins
+config0 = SLCEMonteCarlo.from_matrix(randn(rng, 3, n_sites(H)))  # random unit spins
 
 res = run_llg(prob, config0; dt = 0.5, nsteps = 600,            # dt in fs
               measure_interval = 10,

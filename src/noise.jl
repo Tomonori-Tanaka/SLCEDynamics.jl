@@ -10,7 +10,7 @@
 # The same draw is used by BOTH integrator stages of one step — that is what makes
 # the Heun structure converge to the Stratonovich solution.
 #
-# Draws are keyed philox4x32-10 (SCEMonteCarlo's public facade — Random123
+# Draws are keyed philox4x32-10 (SLCEMonteCarlo's public facade — Random123
 # known-answer-gated): a draw is a pure function of (seed, site, step), so
 # trajectories are bit-reproducible for any ntasks and need no stored RNG state.
 #

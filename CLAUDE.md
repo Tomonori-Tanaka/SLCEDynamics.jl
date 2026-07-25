@@ -7,9 +7,9 @@
 ## Project goal
 
 Atomistic spin dynamics (LLG / stochastic LLG) on fitted SCE models, on top of
-`SCEMonteCarlo.jl` (`TiledHamiltonian` + `energy_gradient!`). Priority: physical
+`SLCEMonteCarlo.jl` (`TiledHamiltonian` + `energy_gradient!`). Priority: physical
 correctness of the equation of motion and thermostat (validated against analytic
-solutions and, for finite T, against `SCEMonteCarlo` equilibrium averages) and
+solutions and, for finite T, against `SLCEMonteCarlo` equilibrium averages) and
 the ecosystem's bit-reproducibility discipline. See `SPEC.md` for the working
 equation, unit system, and the settled stochastic-LLG design.
 
@@ -19,10 +19,10 @@ equation, unit system, and the settled stochastic-LLG design.
   external field in **tesla** only at the boundary (`MU_B_EV_T`); μ_B cancels in
   the core evolution (`p_i = g_i/(ħ·magmom_i·(1+α_i²))` carries only ħ and
   g/magmom). Temperature (when the thermostat lands): reuse
-  `SCEMonteCarlo.resolve_kt` — `temperature`[K] XOR `kT`[eV], never both.
+  `SLCEMonteCarlo.resolve_kt` — `temperature`[K] XOR `kT`[eV], never both.
 - **Spins are unit vectors** (`SpinConfig = Vector{SVector{3,Float64}}`);
   `magmom` [μ_B] is a separate per-site parameter (an explicit `LLGProblem`
-  argument — a fitted `SCEPredictor` does not carry per-atom moments).
+  argument — a fitted `SLCEModel` does not carry per-atom moments).
 - **Sign conventions**: torque `τ_i = −e_i×G_i = m_i×B_eff,i` (physical /
   Landau–Lifshitz, the ecosystem convention); rotation vector
   `ω = −p(G + α e×G)`; dissipation `dE/dt = −Σ p α|G_⊥|² ≤ 0`. γ > 0; a spin at
@@ -42,12 +42,12 @@ equation, unit system, and the settled stochastic-LLG design.
 - **`LLGProblem` prefactor/Zeeman resolution ↔ `total_energy(::LLGProblem, …)`**:
   `gzee = ∂E_Z/∂e` is used by BOTH the dynamics and the energy; change one side
   and the conservation gate (`test_conservation.jl`) breaks.
-- **Inactive-site convention ↔ `SCEMonteCarlo`'s frozen-spin convention**:
+- **Inactive-site convention ↔ `SLCEMonteCarlo`'s frozen-spin convention**:
   integrator stages skip, no Zeeman, `mean_spins` excludes, `pref = 0`, spins
   bitwise frozen (`test_single_spin.jl` frozen testset). Mirrors the sibling —
-  if `SCEMonteCarlo` changes `site_active` semantics, this package follows.
+  if `SLCEMonteCarlo` changes `site_active` semantics, this package follows.
 - **Upstream gradient contract**: `energy_gradient!` (tangent-projected, exact,
-  bit-identical for any ntasks, ≈ 1 sweep/call) is pinned in SCEMonteCarlo's
+  bit-identical for any ntasks, ≈ 1 sweep/call) is pinned in SLCEMonteCarlo's
   `test_gradient.jl`; this package's determinism gates assume it.
 - **FDT constant ↔ `_omega`'s (1+α²) prefactor ↔ the α-independence gate**:
   `σ_i = √(2 α kB T ħ magmom/(g Δt))` in `noise.jl` is correct ONLY for noise
@@ -56,7 +56,7 @@ equation, unit system, and the settled stochastic-LLG design.
   the runtime tripwire is the α = 0.5 vs 1.0 Boltzmann gate in
   `test_thermostat.jl`. The same draw must feed BOTH integrator stages
   (Stratonovich) — `_fill_noise!` runs once per step, never per stage.
-- **Noise counter layout ↔ SCEMonteCarlo's philox contract**: word 4 carries the
+- **Noise counter layout ↔ SLCEMonteCarlo's philox contract**: word 4 carries the
   nonzero `_DOMAIN_SD` tag (MC streams use 0 — the documented upstream
   contract); `philox_block`/`philox_normal2` are the public facade pinned by the
   Random123 known-answer test upstream. Change the layout and seeded
@@ -85,7 +85,7 @@ equation, unit system, and the settled stochastic-LLG design.
   The configuration is restored **verbatim** (`_config_verbatim`) — never
   `from_matrix`, whose renormalization ULP-perturbs chaotic trajectories (the
   bug the crash-resume gate in `test_checkpoint.jl` caught). The model identity
-  is `SCEMonteCarlo.model_fingerprint` (upstream public facade — its mixing is
+  is `SLCEMonteCarlo.model_fingerprint` (upstream public facade — its mixing is
   part of this file format too).
 - **GPU stage kernels ↔ the host `_omega`/`_rotate`/`_fill_noise!`/
   `_renormalize_active!` ↔ the composite keyed reference** (`src/gpu/kernels.jl`
@@ -95,7 +95,7 @@ equation, unit system, and the settled stochastic-LLG design.
   KA-CPU backend). The noise kernel's inactive branch writes an exact
   `zero(SVector)` — `σ·ξ` at `σ = 0` would emit −0.0 (D12,
   `docs/specs/gpu-llg.md`). The gradient side of the reference is
-  `SCEMonteCarlo._gradient_lane_ref!` by qualified name — an upstream rename
+  `SLCEMonteCarlo._gradient_lane_ref!` by qualified name — an upstream rename
   breaks the a3 gate.
 - **Checkpoint schema v2 ↔ `_RunSpec` compute fields ↔ both resume methods**
   (`checkpoint.jl`, `src/gpu/run.jl`): `run/compute`/`run/backend`/
@@ -103,15 +103,15 @@ equation, unit system, and the settled stochastic-LLG design.
   resume like `dt`/`seed`; the v1 back-read branch (compute = "cpu", ws = 0)
   stays alive as long as v1 files circulate; `_ck_due` must mirror
   `_ck_llg!`'s cadence exactly (the GPU loop snapshots only when it fires).
-- **`equilibrium_stats` ↔ SCEMonteCarlo's `_finalize_stats`**: `stats.jl`
+- **`equilibrium_stats` ↔ SLCEMonteCarlo's `_finalize_stats`**: `stats.jl`
   deliberately parallels the MC finalization (bin size
   `max(1, fld(kept, nbins))`, jackknife over `bin_means`, the
   `f(means, kT, n_active)` NamedTuple call, the `< 2` bins → NaN path) on the
-  upstream **public** tier — if SCEMonteCarlo changes its binning/jackknife
+  upstream **public** tier — if SLCEMonteCarlo changes its binning/jackknife
   conventions or `ObservableStat`, this bridge follows (gate: the cross-package
   equilibrium test compares stats produced by both pipelines).
 - **S(q,ω) phase table ↔ upstream site ordering** (`sqw.jl` `_fill_phases!` /
-  `channel_sumrule` ↔ SCEMonteCarlo `site_index`/`site_atom`/
+  `channel_sumrule` ↔ SLCEMonteCarlo `site_index`/`site_atom`/
   `supercell_crystal`): the kernel assumes atom-fastest column-major cell order
   (`atom = mod1(s, n_a)`, `cell = (s−1) ÷ n_a` decomposed column-major) — the
   upstream documented, `test_geometry.jl`-pinned contract. Local gate: the
@@ -132,12 +132,12 @@ equation, unit system, and the settled stochastic-LLG design.
   renaming the default or changing the `vec(to_matrix(…))` layout breaks
   stored checkpoint files (schema-version territory) and
   `structure_factor(path, …)`.
-- **`Observable` contract ↔ SCEMonteCarlo's**: `run_llg` reuses
-  `SCEMonteCarlo.Observable` verbatim (`f(config, energy, H)`, `energy` = SCE
+- **`Observable` contract ↔ SLCEMonteCarlo's**: `run_llg` reuses
+  `SLCEMonteCarlo.Observable` verbatim (`f(config, energy, H)`, `energy` = SCE
   energy, intercept excluded, Zeeman NOT included) so one definition measures
   identical values in both packages. `LLGResult.energies` is the *dynamical*
   energy (SCE + Zeeman) — the two differ whenever `b_ext ≠ 0`
-  (`test_observables.jl` pins the split). If SCEMonteCarlo changes the
+  (`test_observables.jl` pins the split). If SLCEMonteCarlo changes the
   `Observable` measurement signature, `_measure!` follows.
 
 ## Tests
@@ -148,8 +148,8 @@ equation, unit system, and the settled stochastic-LLG design.
 | `TEST_MODE=all julia --project -e 'using Pkg; Pkg.test()'` | unit + Aqua + JET |
 | `TEST_MODE=jet julia --project -e 'using Pkg; Pkg.test()'` | JET type-stability |
 
-Dev deps are path-devs: `Pkg.develop(path = "../SCEMonteCarlo.jl")` and
-`../SCEFitting.jl` (Manifest gitignored).
+Dev deps are path-devs: `Pkg.develop(path = "../SLCEMonteCarlo.jl")` and
+`../SLCE.jl` (Manifest gitignored).
 
 ## References
 

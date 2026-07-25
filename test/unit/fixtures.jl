@@ -1,19 +1,19 @@
-# Shared fixtures for the unit suite, mirroring SCEMonteCarlo's test fixtures.
+# Shared fixtures for the unit suite, mirroring SLCEMonteCarlo's test fixtures.
 # `SD` aliases the package so internal names resolve as `SD._name`.
 
-using SCESpinDynamics
-using SCEMonteCarlo
-using SCEFitting
-using Spglib: Spglib          # activates SCEFitting's SpglibBackend extension
+using SLCEDynamics
+using SLCEMonteCarlo
+using SLCE
+using Spglib: Spglib          # activates SLCE's SpglibBackend extension
 using LinearAlgebra
 using Random
 using StaticArrays
 using Test
 
-const SD = SCESpinDynamics
-const MC = SCEMonteCarlo
+const SD = SLCEDynamics
+const MC = SLCEMonteCarlo
 
-# A ferromagnetic Heisenberg dimer (the SCEMonteCarlo fixture): 4 atoms in a
+# A ferromagnetic Heisenberg dimer (the SLCEMonteCarlo fixture): 4 atoms in a
 # column, but only the first SALC — the atom-1–2 bond — carries a coefficient, so
 # atoms 3–4 are inactive (frozen by the dynamics). E = J e₁·e₂ exactly.
 function _dimer_crystal()
@@ -22,9 +22,9 @@ function _dimer_crystal()
 end
 
 function _dimer_model(J::Float64 = -0.02)
-    b = SCEBasis(_dimer_crystal(), BasisSpec(; nbody = 2, cutoff = 2.6,
+    b = SLCEBasis(_dimer_crystal(), BasisSpec(; nbody = 2, cutoff = 2.6,
                                              lmax = [1], isotropy = true))
-    return SCEPredictor(b, 0.0, vcat([J], zeros(n_salcs(b) - 1)))
+    return SLCEModel(b, 0.0, vcat([J], zeros(n_salcs(b) - 1)))
 end
 
 # The pair coupling J of the dimer (E = J e₁·e₂), read off tiled energies.
@@ -40,10 +40,10 @@ end
 # every bond carries J (bonds 1–2, 2–3, 3–4 and the periodic 4–1 image, all
 # 2.5 Å < cutoff 2.6) — the S(q,ω) dispersion fixture. All sites active.
 function _ring_model(J::Float64 = -0.02)
-    b = SCEBasis(_dimer_crystal(), BasisSpec(; nbody = 2, cutoff = 2.6,
+    b = SLCEBasis(_dimer_crystal(), BasisSpec(; nbody = 2, cutoff = 2.6,
                                              lmax = [1], isotropy = true))
     @assert n_salcs(b) == 4          # exactly the four NN bonds, one SALC each
-    return SCEPredictor(b, 0.0, fill(J, 4))
+    return SLCEModel(b, 0.0, fill(J, 4))
 end
 
 # The effective ring coupling (E = J_eff Σ_bonds e_i·e_j), measured from tiled
@@ -65,9 +65,9 @@ function _biquadratic_crystal()
 end
 
 function _biquadratic_model(seed)
-    b = SCEBasis(_biquadratic_crystal(), BasisSpec(; nbody = 2, cutoff = 1.5,
+    b = SLCEBasis(_biquadratic_crystal(), BasisSpec(; nbody = 2, cutoff = 1.5,
                                                    lmax = [2], isotropy = false))
-    return SCEPredictor(b, 0.0, 0.05 .* randn(MersenneTwister(seed), n_salcs(b)))
+    return SLCEModel(b, 0.0, 0.05 .* randn(MersenneTwister(seed), n_salcs(b)))
 end
 
 # A single-site uniaxial-anisotropy model (tetragonal cell, spglib backend ⇒ the
@@ -79,11 +79,11 @@ function _uniaxial_crystal()
 end
 
 function _uniaxial_model(K::Float64)
-    b = SCEBasis(_uniaxial_crystal(), BasisSpec(; nbody = 1, cutoff = 1.0,
+    b = SLCEBasis(_uniaxial_crystal(), BasisSpec(; nbody = 1, cutoff = 1.0,
                                                 lmax = [2], isotropy = false);
                  backend = SpglibBackend())
     @assert n_salcs(b) == 1
-    return SCEPredictor(b, 0.0, [K])
+    return SLCEModel(b, 0.0, [K])
 end
 
 _uniaxial_config(u::Float64, φ::Float64 = 0.0) =

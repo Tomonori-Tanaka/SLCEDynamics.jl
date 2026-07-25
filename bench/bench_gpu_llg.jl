@@ -1,17 +1,17 @@
 # A100 smoke + bench for the GPU LLG path (decision record docs/specs/gpu-llg.md
 # L5; run on kugui's accelerator queue with SCE_REQUIRE_CUDA=1).
 #
-#   julia --project=@sce -t 8 bench/bench_gpu_llg.jl <model.toml> [dims]
+#   julia --project=@slce -t 8 bench/bench_gpu_llg.jl <model.toml> [dims]
 #
 # Sections: (1) correctness smoke on the device (repeat identity + same-seed
 # CPU-vs-GPU short-horizon tolerance); (2) T_step timing CPU vs GPU; (3) the
 # go/no-go readout (≥ 5× at the production model — l044 8³ is the bar).
 
-using SCEFitting, SCEMonteCarlo, SCESpinDynamics
+using SLCE, SLCEMonteCarlo, SLCEDynamics
 using KernelAbstractions
 using StaticArrays, LinearAlgebra, Printf, Random
-const MC = SCEMonteCarlo
-const SD = SCESpinDynamics
+const MC = SLCEMonteCarlo
+const SD = SLCEDynamics
 
 const REQUIRE_CUDA = get(ENV, "SCE_REQUIRE_CUDA", "0") == "1"
 HAVE_CUDA = false
@@ -30,7 +30,7 @@ REQUIRE_CUDA && !HAVE_CUDA && error("SCE_REQUIRE_CUDA=1 but CUDA is not function
 
 modelpath = length(ARGS) >= 1 ? ARGS[1] : error("usage: bench_gpu_llg.jl model.toml [n]")
 n_dim = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 8
-model = SCEFitting.load(SCEPredictor, modelpath)
+model = SLCE.load(SLCEModel, modelpath)
 H = TiledHamiltonian(model; dims = (n_dim, n_dim, n_dim))
 println("model: ", modelpath, "  dims = ", (n_dim, n_dim, n_dim),
         "  n_sites = ", H.n_sites)

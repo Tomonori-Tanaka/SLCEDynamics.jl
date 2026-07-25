@@ -1,12 +1,12 @@
-# SCESpinDynamics.jl
+# SLCEDynamics.jl
 
 Atomistic spin dynamics (Landau–Lifshitz–Gilbert) for fitted spin-cluster-expansion
 (SCE) models — the dynamics member of the SCE family:
 
-- [`SCEFitting.jl`](../SCEFitting.jl) fits the model (energy + torque co-fit),
-- [`SCEMonteCarlo.jl`](../SCEMonteCarlo.jl) does equilibrium thermodynamics,
+- [`SLCE.jl`](../SLCE.jl) fits the model (energy + torque co-fit),
+- [`SLCEMonteCarlo.jl`](../SLCEMonteCarlo.jl) does equilibrium thermodynamics,
 - **this package** integrates the real-time LLG equation of motion on the same
-  tiled supercell Hamiltonian, through `SCEMonteCarlo`'s exact all-site gradient
+  tiled supercell Hamiltonian, through `SLCEMonteCarlo`'s exact all-site gradient
   `energy_gradient!`.
 
 ## Scope
@@ -18,12 +18,12 @@ Atomistic spin dynamics (Landau–Lifshitz–Gilbert) for fitted spin-cluster-ex
   projected Heun (independent cross-check).
 - **Stochastic LLG**: pass `temperature` [K] or `kT` [eV] to `run_llg` — keyed
   counter-based Philox thermal noise (stateless, Stratonovich), validated
-  against analytic Boltzmann distributions and `SCEMonteCarlo` Metropolis
+  against analytic Boltzmann distributions and `SLCEMonteCarlo` Metropolis
   equilibrium averages. `equilibrium_stats` computes τ_int-aware means and
   jackknifed `Evaluable`s (specific heat &c.) with the same definitions as the
   MC drivers.
 - Bit-reproducible for any `ntasks`; deterministic runs consume no RNG (the
-  `SCEMonteCarlo` P6 discipline).
+  `SLCEMonteCarlo` P6 discipline).
 - **Checkpoint/resume**: `run_llg(...; checkpoint = "run.jld2",
   checkpoint_interval = 50_000)` writes atomic plain-data JLD2 restart files;
   `resume(path, prob)` continues (or, via `nsteps`, *extends*) the run
@@ -52,9 +52,9 @@ Planned next: GNEB, SIB, GPU S(q,ω). See `SPEC.md`.
 ## Quick start
 
 ```julia
-using SCEFitting, SCEMonteCarlo, SCESpinDynamics
+using SLCE, SLCEMonteCarlo, SLCEDynamics
 
-model = SCEFitting.load(SCEPredictor, "model.toml")
+model = SLCE.load(SLCEModel, "model.toml")
 H = TiledHamiltonian(model; dims = (4, 4, 4))
 prob = LLGProblem(H; magmom = 2.2, alpha = 0.1)          # magmom in μ_B
 config0 = ...                                            # e.g. a ground state

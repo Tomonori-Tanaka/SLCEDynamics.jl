@@ -1,5 +1,5 @@
 # Checkpoint / resume for `run_llg`, following the sibling's format discipline
-# (SCEMonteCarlo `checkpoint.jl` / `docs/specs/checkpoint-schema.md`): the file
+# (SLCEMonteCarlo `checkpoint.jl` / `docs/specs/checkpoint-schema.md`): the file
 # holds ONLY plain data (Int/Float64/UInt64/String and arrays thereof, in named
 # JLD2 groups) — no Julia struct reconstruction — and writes are atomic (temp
 # file + `mv`). No RNG state exists to store (the noise is a stateless pure
@@ -20,7 +20,7 @@
 const _CKPT_SCHEMA_LLG = 3
 
 # The run-side writer state: target path, write cadence, and the cached model
-# fingerprint (SCEMonteCarlo's stable FNV-1a, the shared identity check).
+# fingerprint (SLCEMonteCarlo's stable FNV-1a, the shared identity check).
 mutable struct _LLGCheckpointer
     const path::String
     const interval::Int         # steps between periodic writes; 0 ⇒ completion-only
@@ -47,7 +47,7 @@ function _integrator_from_name(name::String)::AbstractIntegrator
           "package version?)")
 end
 
-# Bitwise configuration restore. Deliberately NOT `SCEMonteCarlo.from_matrix`,
+# Bitwise configuration restore. Deliberately NOT `SLCEMonteCarlo.from_matrix`,
 # which renormalizes each column: an ULP-level perturbation of the state forks a
 # chaotic trajectory, and resume must be bit-identical to the uninterrupted run.
 function _config_verbatim(m::Matrix{Float64}, n::Int)::SpinConfig
@@ -67,7 +67,7 @@ function _write_ckpt_llg(ck::_LLGCheckpointer, spec::_RunSpec, config::SpinConfi
         f["schema_version"] = _CKPT_SCHEMA_LLG
         f["kind"] = "llg"
         f["julia_version"] = string(VERSION)
-        f["package_version"] = string(pkgversion(SCESpinDynamics))
+        f["package_version"] = string(pkgversion(SLCEDynamics))
         f["model_fingerprint"] = ck.fingerprint
         f["checkpoint_interval"] = ck.interval
         # trajectory-defining problem parameters (validated == on resume; the
@@ -96,7 +96,7 @@ function _write_ckpt_llg(ck::_LLGCheckpointer, spec::_RunSpec, config::SpinConfi
         f["run/observable_ncomps"] = Int[o.ncomp for o in spec.observables]
         f["progress/step"] = step
         f["progress/nmeas"] = k
-        f["state/config"] = SCEMonteCarlo.to_matrix(config)
+        f["state/config"] = SLCEMonteCarlo.to_matrix(config)
         f["trace/times"] = tr.times[1:k]
         f["trace/energies"] = tr.energies[1:k]
         f["trace/mean_spins"] = Float64[tr.means[j][row] for row = 1:3, j = 1:k]
@@ -298,7 +298,7 @@ restored bitwise alongside the configuration.
   checkpointing to the same `path` with the stored cadence (`checkpoint =
   nothing` disables; `checkpoint_interval` overrides).
 """
-function SCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
+function SLCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
         observables::Vector{Observable} = Observable[],
         nsteps::Union{Nothing,Integer} = nothing,
         ntasks::Integer = 1,

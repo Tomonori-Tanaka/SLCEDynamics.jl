@@ -1,7 +1,7 @@
 # Deterministic LLG
 
 ```@meta
-CurrentModule = SCESpinDynamics
+CurrentModule = SLCEDynamics
 ```
 
 [`run_llg`](@ref) integrates the Landau–Lifshitz–Gilbert equation for unit spin
@@ -15,7 +15,7 @@ p_i = \frac{g_i}{\hbar\, \mathrm{magmom}_i\,(1 + \alpha_i^2)},
 ```
 
 where ``\mathbf G_i = \partial E/\partial \mathbf e_i`` (model energy units) is the
-sum of the exact SCE gradient (`SCEMonteCarlo.energy_gradient!`) and the Zeeman
+sum of the exact SCE gradient (`SLCEMonteCarlo.energy_gradient!`) and the Zeeman
 gradient ``-\mathrm{magmom}_i\,\mu_B\,\mathbf B_\mathrm{ext}``. The torque convention
 matches the ecosystem (``\boldsymbol\tau_i = -\mathbf e_i \times \mathbf G_i``, the
 physical / Landau–Lifshitz torque), and the damping term strictly dissipates:
@@ -84,9 +84,9 @@ long runs (`0` disables; `HeunProjected` renormalizes every step by construction
 ## Observables and evaluables
 
 Nothing is hard-coded into the stepping loop: `run_llg` records a vector of
-`SCEMonteCarlo.Observable`s — the **same** definitions the MC drivers accept
+`SLCEMonteCarlo.Observable`s — the **same** definitions the MC drivers accept
 (`Observable(name, ncomp, f)` with `f(config, energy, H)`), including
-`SCEMonteCarlo.standard_observables(H)` and user-defined ones. Per the `Observable`
+`SLCEMonteCarlo.standard_observables(H)` and user-defined ones. Per the `Observable`
 contract, `energy` is the **SCE** energy (model units, intercept excluded, Zeeman
 not included), so a definition measures identical values on the same configuration
 in both packages. Each series lands in `LLGResult.series[name]` as an
@@ -100,19 +100,19 @@ integrator leaves an ``O(dt^2)`` drift. On the cubic ferromagnet of
 [Getting started](../getting_started.md):
 
 ```@example dyn
-using SCESpinDynamics, SCEMonteCarlo, SCEFitting
+using SLCEDynamics, SLCEMonteCarlo, SLCE
 import Spglib
 using LinearAlgebra, Random
 
 lat = Lattice(Matrix(1.0 * I(3)))
 cell = Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
-basis = SCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
+basis = SLCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
                                  isotropy = true);
                  backend = SpglibBackend(), images = AllImages())
-model = SCEPredictor(basis, 0.0, [-0.01])
+model = SLCEModel(basis, 0.0, [-0.01])
 H = TiledHamiltonian(model; dims = (2, 2, 2))
 
-config0 = SCEMonteCarlo.from_matrix(randn(Xoshiro(2), 3, n_sites(H)))
+config0 = SLCEMonteCarlo.from_matrix(randn(Xoshiro(2), 3, n_sites(H)))
 cons = run_llg(LLGProblem(H; magmom = 2.2, alpha = 0.0), config0;
                dt = 0.25, nsteps = 800, measure_interval = 10)
 maximum(abs, cons.energies .- cons.energies[1])   # the α = 0 conservation gate
