@@ -189,20 +189,20 @@ end
         # periodic tick on disk) resumes bit-identically on the device
         cpath2 = joinpath(dir, "gpucrash.jld2")
         nm = Ref(0)
-        boom = Observable(:energy, 1, (c, E, h) -> begin
+        boom = Observable(:energy, 1, v -> begin
                               nm[] += 1
                               nm[] > 4 && error("boom")      # measurement 5
-                              E
+                              v.energy
                           end)
         ref = SD.run_llg_gpu(probd, c0d, gHd; kw...,
                              observables = [Observable(:energy, 1,
-                                                       (c, E, h) -> E)])
+                                                       v -> v.energy)])
         @test_throws ErrorException SD.run_llg_gpu(probd, c0d, gHd; kw...,
                                                    observables = [boom],
                                                    checkpoint = cpath2,
                                                    checkpoint_interval = 6)
         cr = resume(cpath2, probd, gHd;
-                    observables = [Observable(:energy, 1, (c, E, h) -> E)])
+                    observables = [Observable(:energy, 1, v -> v.energy)])
         @test cr.config == ref.config && cr.energies == ref.energies
     end
 
@@ -346,7 +346,7 @@ end
         gH1 = MC.GPUTiledHamiltonian(CPU(), H1)
         kt = 0.03
         prob = LLGProblem(H1; magmom = 2.0, alpha = 1.0)
-        obs = [Observable(:ez2, 1, (c, E, h) -> c[1][3]^2)]
+        obs = [Observable(:ez2, 1, v -> v.config[1][3]^2)]
         r = SD.run_llg_gpu(prob, _uniaxial_config(0.3), gH1; dt = 0.05,
                            nsteps = 60_000, kT = kt, seed = 42,
                            measure_interval = 10, observables = obs)

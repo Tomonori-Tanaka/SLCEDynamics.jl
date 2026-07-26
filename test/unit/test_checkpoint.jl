@@ -43,8 +43,8 @@ end
     H = MC.TiledHamiltonian(_biquadratic_model(0); dims = (1, 1, 1))
     prob = LLGProblem(H; magmom = 2.0, alpha = 0.7)
     c0 = _rand_config(MersenneTwister(3), H)
-    obs = [Observable(:e12, 1, (c, E, h) -> dot(c[1], c[2])),
-           Observable(:m, 3, (c, E, h) -> (c[1] + c[2]) / 2)]
+    obs = [Observable(:e12, 1, v -> dot(v.config[1], v.config[2])),
+           Observable(:m, 3, v -> (v.config[1] + v.config[2]) / 2)]
     # mi = 7 with nsteps = 1000 puts the final measurement OFF the grid — the
     # trace-layout edge every resume path must respect
     kw = (; dt = 0.02, nsteps = 1000, kT = 0.02, seed = 5, measure_interval = 7,
@@ -67,10 +67,10 @@ end
         # leaves the last periodic tick (step 548) on disk — a genuine mid-run
         # crash file produced through the public API alone
         nmeas = Ref(0)
-        boom = Observable(:e12, 1, (c, E, h) -> begin
+        boom = Observable(:e12, 1, v -> begin
                               nmeas[] += 1
                               nmeas[] > 80 && error("boom")
-                              dot(c[1], c[2])
+                              dot(v.config[1], v.config[2])
                           end)
         @test_throws ErrorException run_llg(prob, c0; kw...,
                                             observables = [boom, obs[2]],
@@ -123,10 +123,10 @@ end
     @testset "truncating resume to a mid-run file's own step" begin
         path = joinpath(dir, "trunc.jld2")
         nmeas = Ref(0)
-        boom = Observable(:e12, 1, (c, E, h) -> begin
+        boom = Observable(:e12, 1, v -> begin
                               nmeas[] += 1
                               nmeas[] > 40 && error("boom")     # step 7·40 = 280
-                              dot(c[1], c[2])
+                              dot(v.config[1], v.config[2])
                           end)
         @test_throws ErrorException run_llg(prob, c0; kw...,
                                             observables = [boom, obs[2]],
@@ -224,10 +224,10 @@ end
         # crash-shaped mid-run file resumes bit-identically
         cpath = joinpath(dir, "qt_crash.jld2")
         nmeas = Ref(0)
-        boom = Observable(:e12, 1, (c, E, h) -> begin
+        boom = Observable(:e12, 1, v -> begin
                               nmeas[] += 1
                               nmeas[] > 80 && error("boom")
-                              dot(c[1], c[2])
+                              dot(v.config[1], v.config[2])
                           end)
         @test_throws ErrorException run_llg(prob, c0; kwq..., nsteps = 1000,
                                             observables = [boom, obs[2]],

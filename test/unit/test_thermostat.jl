@@ -9,8 +9,8 @@
     K = 0.05
     kt = 0.03
     H1 = MC.TiledHamiltonian(_uniaxial_model(K); dims = (1, 1, 1))
-    obs1 = [Observable(:energy, 1, (c, E, H) -> E),
-            Observable(:ez2, 1, (c, E, H) -> c[1][3]^2)]
+    obs1 = [Observable(:energy, 1, v -> v.energy),
+            Observable(:ez2, 1, v -> v.config[1][3]^2)]
     Eu(u) = total_energy(H1, _uniaxial_config(u))
     ez2_exact = _boltzmann_average(Eu, kt, (u, E) -> u^2)
     e_exact = _boltzmann_average(Eu, kt, (u, E) -> E)
@@ -106,8 +106,8 @@
     @testset "sLLG ≡ Metropolis equilibrium (gate d, dimer)" begin
         H = MC.TiledHamiltonian(_dimer_model(-0.02); dims = (1, 1, 1))
         kt2 = 0.05
-        obs = [Observable(:energy, 1, (c, E, Hh) -> E),
-               Observable(:e12, 1, (c, E, Hh) -> dot(c[1], c[2]))]
+        obs = [Observable(:energy, 1, v -> v.energy),
+               Observable(:e12, 1, v -> dot(v.config[1], v.config[2]))]
         mc = run_mc(H; kT = kt2, seed = 11, sweeps_therm = 5_000,
                     sweeps_measure = 100_000, observables = obs,
                     evaluables = MC.Evaluable[])

@@ -70,7 +70,7 @@ deficit_qt(kt) = sum(kt * theta(g * bq / (magmom * kt)) / bq for bq in bqs) / N
 
 # --- runs ---------------------------------------------------------------------
 prob = LLGProblem(H; magmom, alpha, b_ext = (0.0, 0.0, Bz))
-mobs = [Observable(:mz, 1, (c, E, h) -> sum(s[3] for s in c) / length(c))]
+mobs = [Observable(:mz, 1, v -> sum(s[3] for s in v.config) / length(v.config))]
 
 function measure_m(thermostat, kt, seed)
     res = run_llg(prob, MC.SpinConfig([up for _ = 1:N]); dt, nsteps, kT = kt,

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — BREAKING: the upstream `Observable` contract is now `f(view)`
+
+- `SLCEMonteCarlo.Observable` takes a single `MCView` argument
+  (`v.config`, `v.disps`, `v.energy`, `v.H`) instead of `(config, energy, H)`,
+  so that the growing sampled state — displacements arrived with the upstream
+  spin–lattice channel — does not break every observable each time it grows.
+  Every observable definition here and in user code must be rewritten:
+  `(cfg, E, H) -> cfg[1][3]` becomes `v -> v.config[1][3]`.
+- `_measure!` builds the view with an **empty** `disps`. Spin dynamics has no
+  displacement channel, so a displacement observable throws here instead of
+  reporting a confident zero. `trajectory_observable` moved with it; the
+  recorded `:spins` series layout is unchanged, so stored checkpoints still
+  read.
+
 ### Changed — BREAKING: package renamed SCESpinDynamics.jl → SLCEDynamics.jl (SLCE family, M0)
 
 - The whole family is renamed to the **spin–lattice cluster expansion (SLCE)**

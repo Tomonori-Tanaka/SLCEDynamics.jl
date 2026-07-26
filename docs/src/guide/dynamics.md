@@ -85,7 +85,7 @@ long runs (`0` disables; `HeunProjected` renormalizes every step by construction
 
 Nothing is hard-coded into the stepping loop: `run_llg` records a vector of
 `SLCEMonteCarlo.Observable`s — the **same** definitions the MC drivers accept
-(`Observable(name, ncomp, f)` with `f(config, energy, H)`), including
+(`Observable(name, ncomp, f)` with `f(v::SLCEMonteCarlo.MCView)`), including
 `SLCEMonteCarlo.standard_observables(H)` and user-defined ones. Per the `Observable`
 contract, `energy` is the **SCE** energy (model units, intercept excluded, Zeeman
 not included), so a definition measures identical values on the same configuration

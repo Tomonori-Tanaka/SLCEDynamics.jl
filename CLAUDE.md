@@ -133,12 +133,16 @@ equation, unit system, and the settled stochastic-LLG design.
   stored checkpoint files (schema-version territory) and
   `structure_factor(path, …)`.
 - **`Observable` contract ↔ SLCEMonteCarlo's**: `run_llg` reuses
-  `SLCEMonteCarlo.Observable` verbatim (`f(config, energy, H)`, `energy` = SCE
-  energy, intercept excluded, Zeeman NOT included) so one definition measures
-  identical values in both packages. `LLGResult.energies` is the *dynamical*
-  energy (SCE + Zeeman) — the two differ whenever `b_ext ≠ 0`
-  (`test_observables.jl` pins the split). If SLCEMonteCarlo changes the
-  `Observable` measurement signature, `_measure!` follows.
+  `SLCEMonteCarlo.Observable` verbatim — `f(v::SLCEMonteCarlo.MCView)`, with
+  `v.energy` = SCE energy (intercept excluded, Zeeman NOT included) — so one
+  definition measures identical values in both packages. `LLGResult.energies` is
+  the *dynamical* energy (SCE + Zeeman) — the two differ whenever `b_ext ≠ 0`
+  (`test_observables.jl` pins the split). `_measure!` builds the view with an
+  **empty** `disps`: spin dynamics has no displacement channel, so a displacement
+  observable must throw here rather than read zeros. If SLCEMonteCarlo adds a
+  field to `MCView`, decide explicitly what this package puts in it — silently
+  passing an empty or zero placeholder is how a displacement observable would
+  come to report a confident wrong number.
 
 ## Tests
 

@@ -29,9 +29,9 @@
     @testset "custom observables, Zeeman split" begin
         bz = 4.0
         probB = LLGProblem(H; magmom = 2.0, b_ext = (0.0, 0.0, bz))
-        obs = [Observable(:ez1, 1, (cfg, E, H) -> cfg[1][3]),
-               Observable(:s12, 3, (cfg, E, H) -> cfg[1] + cfg[2]),
-               Observable(:esce, 1, (cfg, E, H) -> E)]
+        obs = [Observable(:ez1, 1, v -> v.config[1][3]),
+               Observable(:s12, 3, v -> v.config[1] + v.config[2]),
+               Observable(:esce, 1, v -> v.energy)]
         r = run_llg(probB, config0; dt = 0.01, nsteps = 50, measure_interval = 10,
                     observables = obs)
         @test r.series[:ez1][1, end] == r.config[1][3]
@@ -44,11 +44,11 @@
     end
 
     @testset "validation" begin
-        dup = [Observable(:x, 1, (cfg, E, H) -> E),
-               Observable(:x, 1, (cfg, E, H) -> E)]
+        dup = [Observable(:x, 1, v -> v.energy),
+               Observable(:x, 1, v -> v.energy)]
         @test_throws ArgumentError run_llg(prob, config0; dt = 0.01, nsteps = 1,
                                            observables = dup)
-        bad = [Observable(:bad, 2, (cfg, E, H) -> [1.0, 2.0, 3.0])]
+        bad = [Observable(:bad, 2, v -> [1.0, 2.0, 3.0])]
         @test_throws DimensionMismatch run_llg(prob, config0; dt = 0.01,
                                                nsteps = 1, observables = bad)
     end

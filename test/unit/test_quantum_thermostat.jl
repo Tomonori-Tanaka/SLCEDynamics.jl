@@ -312,7 +312,7 @@ end
                           mi = 20)
         up = SVector(0.0, 0.0, 1.0)
         cfg = MC.SpinConfig([up for _ = 1:MC.n_sites(H)])
-        obs = [Observable(:ez, 1, (c, E, h) -> c[1][3])]
+        obs = [Observable(:ez, 1, v -> v.config[1][3])]
         res = run_llg(prob, cfg; dt = dtf, nsteps, kT = kt, seed,
                       measure_interval = mi, observables = obs,
                       thermostat = SD.QuantumThermostat())
@@ -420,8 +420,8 @@ end
         prob = LLGProblem(H; magmom = mu, alpha, b_ext = (0.0, 0.0, Bz))
         up = SVector(0.0, 0.0, 1.0)
         cfg = MC.SpinConfig([up for _ = 1:MC.n_sites(H)])
-        obs = [Observable(:e12, 1, (c, E, h) -> dot(c[1], c[2])),
-               Observable(:ezsum, 1, (c, E, h) -> c[1][3] + c[2][3])]
+        obs = [Observable(:e12, 1, v -> dot(v.config[1], v.config[2])),
+               Observable(:ezsum, 1, v -> v.config[1][3] + v.config[2][3])]
         res = run_llg(prob, cfg; dt = dtf, nsteps = 3_000_000, kT = kt,
                       seed = 33, measure_interval = 40, observables = obs,
                       thermostat = SD.QuantumThermostat())
@@ -453,7 +453,7 @@ end
         dtf = 1.0
         alpha = 0.1
         # classical MC: exact Boltzmann ⟨E⟩ − E₀ = kT·(1 − 2y/(e^{2y}−1)) ≈ kT
-        eobs = [Observable(:energy, 1, (c, E, Hh) -> E)]
+        eobs = [Observable(:energy, 1, v -> v.energy)]
         mc = MC.run_mc(H; kT = kt, seed = 3, sweeps_therm = 10_000,
                        sweeps_measure = 50_000, observables = eobs,
                        evaluables = MC.Evaluable[])
@@ -468,7 +468,7 @@ end
         prob = LLGProblem(H; magmom = mu, alpha)
         up = SVector(0.0, 0.0, 1.0)
         cfg = MC.SpinConfig([up for _ = 1:MC.n_sites(H)])
-        obs = [Observable(:e, 1, (c, E, h) -> E)]
+        obs = [Observable(:e, 1, v -> v.energy)]
         res = run_llg(prob, cfg; dt = dtf, nsteps = 1_000_000, kT = kt,
                       seed = 8, measure_interval = 20, observables = obs,
                       thermostat = SD.QuantumThermostat())
@@ -505,8 +505,9 @@ end
         # error bars; the trajectory feeds the S(q,ω) twin of the same numbers
         mode_obs = [Observable(Symbol(:i, m), 1,
                         let ph = [cis(-2π * m * (j - 1) / 4) for j = 1:4]
-                            (c, E, h) -> abs2(sum(ph[j] * (c[j][1] + im * c[j][2])
-                                                  for j = 1:4)) / 4
+                            v -> abs2(sum(ph[j] * (v.config[j][1] +
+                                                   im * v.config[j][2])
+                                          for j = 1:4)) / 4
                         end) for m = 0:2]
         mi = 15
         nt = 131_072 + 2_000                       # 2¹⁷ analysis frames + burn-in

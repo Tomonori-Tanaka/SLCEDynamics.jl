@@ -136,10 +136,12 @@ matches the returned `config` exactly).
 - `integrator`: [`DepondtMertens`](@ref) (default) or [`HeunProjected`](@ref).
 - `observables`: a vector of `SLCEMonteCarlo.Observable`s — the SAME definitions
   the Monte Carlo drivers accept (`Observable(name, ncomp, f)` with
-  `f(config, energy, H)`, including `SLCEMonteCarlo.standard_observables(H)` and
-  any user-defined ones). Per the `Observable` contract, `energy` is the **SCE**
-  energy (model units, intercept excluded, Zeeman not included) so a definition
-  measures identical values on the same configuration in both packages. Each
+  `f(v::SLCEMonteCarlo.MCView)`, including `SLCEMonteCarlo.standard_observables(H)`
+  and any user-defined ones). Per the `Observable` contract, `v.energy` is the
+  **SCE** energy (model units, intercept excluded, Zeeman not included) so a
+  definition measures identical values on the same configuration in both packages.
+  `v.disps` is **empty** here — spin dynamics has no displacement channel — so a
+  displacement observable throws rather than reporting zeros. Each
   observable's time series lands in `LLGResult.series[name]` as an
   `ncomp × n_measurements` matrix. Names must be unique.
 - `ntasks`: task count for the two per-step field evaluations
@@ -288,8 +290,9 @@ function _measure!(energies::Vector{Float64}, means::Vector{SVector{3,Float64}},
     times[k] = t
     energies[k] = e_sce + _zeeman_energy(prob, config)
     means[k] = _mean_active(prob.H, config)
+    view = SLCEMonteCarlo.MCView(prob.H, config, SVector{3,Float64}[], e_sce)
     for o in observables
-        v = o.f(config, e_sce, prob.H)
+        v = o.f(view)
         col = @view series[o.name][:, k]
         if o.ncomp == 1
             col[1] = v

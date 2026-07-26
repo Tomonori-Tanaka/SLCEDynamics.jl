@@ -29,7 +29,7 @@ bytes — keep it ≲ 10 GB (e.g. 8³ cells × 68 atoms × 4096 frames ≈ 3.4 G
 function trajectory_observable(H::TiledHamiltonian;
                                name::Symbol = :spins)::Observable
     return Observable(name, 3 * n_sites(H),
-                      (config, _, _) -> vec(SLCEMonteCarlo.to_matrix(config)))
+                      v -> vec(SLCEMonteCarlo.to_matrix(v.config)))
 end
 
 """
