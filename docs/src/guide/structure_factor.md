@@ -56,7 +56,7 @@ using LinearAlgebra, Random
 lat = Lattice(Matrix(Diagonal([1.0, 4.0, 4.0])))    # a chain: only ±x in range
 cell = Crystal(lat, reshape([0.0, 0.0, 0.0], 3, 1), [1], ["Fe"])
 basis = SLCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
-                                 isotropy = true);
+                                 soc = false);
                  backend = SpglibBackend(), images = AllImages())
 model = SLCEModel(basis, 0.0, [-0.01])
 H = TiledHamiltonian(model; dims = (8, 1, 1))       # 8 sites along the chain

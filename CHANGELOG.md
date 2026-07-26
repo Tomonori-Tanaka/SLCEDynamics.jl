@@ -16,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkpoint artifacts are unaffected (persistence schemas carry versions,
   not package names).
 
+### Fixed
+
+- Test fixtures, guide pages and `examples/bloch_mt.jl` still used SLCE's old
+  `BasisSpec` keyword `isotropy`, which was renamed to `soc` **with its meaning
+  inverted** (`isotropy = true` ⇔ `soc = false`). Every `BasisSpec` call here
+  therefore raised a `MethodError` on an unknown keyword, so the unit suite
+  errored at fixture construction and the `@example` blocks could not run.
+  Migrated all 11 sites with the inversion applied.
+
 ### Changed
 
 - `run_llg_gpu` is now **exported** (was public-unexported pending the A100

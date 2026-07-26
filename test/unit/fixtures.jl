@@ -23,7 +23,7 @@ end
 
 function _dimer_model(J::Float64 = -0.02)
     b = SLCEBasis(_dimer_crystal(), BasisSpec(; nbody = 2, cutoff = 2.6,
-                                             lmax = [1], isotropy = true))
+                                             lmax = [1], soc = false))
     return SLCEModel(b, 0.0, vcat([J], zeros(n_salcs(b) - 1)))
 end
 
@@ -41,7 +41,7 @@ end
 # 2.5 Å < cutoff 2.6) — the S(q,ω) dispersion fixture. All sites active.
 function _ring_model(J::Float64 = -0.02)
     b = SLCEBasis(_dimer_crystal(), BasisSpec(; nbody = 2, cutoff = 2.6,
-                                             lmax = [1], isotropy = true))
+                                             lmax = [1], soc = false))
     @assert n_salcs(b) == 4          # exactly the four NN bonds, one SALC each
     return SLCEModel(b, 0.0, fill(J, 4))
 end
@@ -66,7 +66,7 @@ end
 
 function _biquadratic_model(seed)
     b = SLCEBasis(_biquadratic_crystal(), BasisSpec(; nbody = 2, cutoff = 1.5,
-                                                   lmax = [2], isotropy = false))
+                                                   lmax = [2], soc = true))
     return SLCEModel(b, 0.0, 0.05 .* randn(MersenneTwister(seed), n_salcs(b)))
 end
 
@@ -80,7 +80,7 @@ end
 
 function _uniaxial_model(K::Float64)
     b = SLCEBasis(_uniaxial_crystal(), BasisSpec(; nbody = 1, cutoff = 1.0,
-                                                lmax = [2], isotropy = false);
+                                                lmax = [2], soc = true);
                  backend = SpglibBackend())
     @assert n_salcs(b) == 1
     return SLCEModel(b, 0.0, [K])
