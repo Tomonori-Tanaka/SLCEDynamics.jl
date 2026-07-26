@@ -10,6 +10,7 @@ lcov.info
 # Manifest. Comment the next line out for an application / reproducible-script
 # repo where you DO want the Manifest tracked.
 /Manifest.toml
+/test/oracle/Manifest.toml
 
 # Documenter build output
 /docs/build/
