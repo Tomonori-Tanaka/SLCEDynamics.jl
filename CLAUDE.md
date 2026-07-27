@@ -103,6 +103,14 @@ equation, unit system, and the settled stochastic-LLG design.
   resume like `dt`/`seed`; the v1 back-read branch (compute = "cpu", ws = 0)
   stays alive as long as v1 files circulate; `_ck_due` must mirror
   `_ck_llg!`'s cadence exactly (the GPU loop snapshots only when it fires).
+  Gates, one per clause: `test_gpu_llg.jl` "…resume refuses a compute switch" (CPU
+  refuses a GPU file, GPU refuses a CPU file without `allow_compute_switch`, a changed
+  `workgroupsize` is also a refused switch; mirrored for the quantum path in
+  `test_checkpoint.jl`), the v1-rewrite resume in the same file (asserts
+  `r.compute == "cpu"` and the ws `0 → 128` fallback), and the crash-shaped mid-run GPU
+  resume for the cadence. That last one covers the dangerous direction only, by design: an
+  under-firing `_ck_due` writes a stale host config and the bit-identity comparison
+  diverges, while an over-firing one costs a needless `synchronize` and nothing else.
 - **`equilibrium_stats` ↔ SLCEMonteCarlo's `_finalize_stats`**: `stats.jl`
   deliberately parallels the MC finalization (bin size
   `max(1, fld(kept, nbins))`, jackknife over `bin_means`, the
@@ -131,7 +139,15 @@ equation, unit system, and the settled stochastic-LLG design.
   `:spins` series is persisted/validated by name and ncomp on resume —
   renaming the default or changing the `vec(to_matrix(…))` layout breaks
   stored checkpoint files (schema-version territory) and
-  `structure_factor(path, …)`.
+  `structure_factor(path, …)`. Gates: name/ncomp by the path round-trip in
+  `test_sqw_core.jl` and the resume validation in `test_checkpoint.jl`; the LAYOUT
+  by the analytic ring gates (`test_sqw_gates.jl`, `test_quantum_thermostat.jl`
+  G6) — verified by mutation, a transpose turns both red. The path round-trip
+  alone cannot see it: writer and reader move together. `test_sqw_core.jl`
+  "series layout is xyz-fastest-then-site" adds no coverage those gates lack; it
+  states the on-disk contract against the configuration itself so a layout change
+  fails at the source instead of surfacing as a wrong ring dispersion three files
+  downstream.
 - **`Observable` contract ↔ SLCEMonteCarlo's**: `run_llg` reuses
   `SLCEMonteCarlo.Observable` verbatim — `f(v::SLCEMonteCarlo.MCView)`, with
   `v.energy` = SCE energy (intercept excluded, Zeeman NOT included) — so one
@@ -143,6 +159,19 @@ equation, unit system, and the settled stochastic-LLG design.
   field to `MCView`, decide explicitly what this package puts in it — silently
   passing an empty or zero placeholder is how a displacement observable would
   come to report a confident wrong number.
+  **Known gap, deliberately unfixed (2026-07-27)**: `LLGProblem` accepts a joint
+  (displacement-carrying) `TiledHamiltonian` without complaint, and the run then
+  dies at the FIRST measurement with a `DimensionMismatch` from `MCView`'s inner
+  constructor — loud, but pointing at the view rather than at the real problem.
+  An upfront guard in `LLGProblem` is the fix; it is parked rather than applied
+  because it is a scope statement ("spin dynamics does not do the displacement
+  channel"), and that belongs with whatever decides how spin–lattice dynamics
+  enters this package. Low severity precisely because it is loud: nothing here
+  silently computes a wrong number on a joint model.
+  Note also that the empty `disps` this package passes is inert: `MCView`'s
+  constructor discards the argument on a pure-spin `H` anyway, so the enforcement
+  lives entirely upstream (gated in SLCEMonteCarlo's `test_joint.jl`). Keep passing
+  it regardless — it states the intent at the call site.
 
 ## Tests
 

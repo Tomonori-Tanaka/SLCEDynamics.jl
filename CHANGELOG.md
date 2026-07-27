@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `test_sqw_core.jl` "series layout is xyz-fastest-then-site": states the recorded
+  `:spins` series' on-disk layout against the configuration itself. It closes no gap —
+  a transpose is already caught by the analytic ring gates, verified by mutation — but
+  it makes a layout change fail at the source rather than as a wrong ring dispersion
+  three files downstream. The path round-trip cannot see it: writer and reader move
+  together.
+
 - `bench/Project.toml`: this package's own GPU bench environment, carrying CUDA
   (which the shared `@slce` env deliberately does not). The two GPU benches used
   to borrow `SLCEMonteCarlo.jl/bench/gpu` on the cluster, which meant the
