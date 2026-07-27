@@ -2,7 +2,11 @@
 # docs/specs/quantum-thermostat.md Q4; run on kugui's accelerator queue with
 # SCE_REQUIRE_CUDA=1).
 #
-#   julia --project=@slce -t 8 bench/bench_gpu_qtb.jl <model.toml> [dims]
+#   julia --project=bench -t 8 bench/bench_gpu_qtb.jl <model.toml> [dims]
+#
+# `bench/Project.toml` is this package's own GPU bench environment: it carries
+# CUDA, which the shared `@slce` env deliberately does not. Path-dev the three
+# SLCE packages into it once per machine (the Manifest is gitignored).
 #
 # Sections: (1) classical run with the zero-sized filter allocations (the
 # refactor must not disturb the classical device path); (2) quantum end-to-end

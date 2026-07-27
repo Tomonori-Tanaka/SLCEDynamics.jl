@@ -1,7 +1,11 @@
 # A100 smoke + bench for the GPU LLG path (decision record docs/specs/gpu-llg.md
 # L5; run on kugui's accelerator queue with SCE_REQUIRE_CUDA=1).
 #
-#   julia --project=@slce -t 8 bench/bench_gpu_llg.jl <model.toml> [dims]
+#   julia --project=bench -t 8 bench/bench_gpu_llg.jl <model.toml> [dims]
+#
+# `bench/Project.toml` is this package's own GPU bench environment: it carries
+# CUDA, which the shared `@slce` env deliberately does not. Path-dev the three
+# SLCE packages into it once per machine (the Manifest is gitignored).
 #
 # Sections: (1) correctness smoke on the device (repeat identity + same-seed
 # CPU-vs-GPU short-horizon tolerance); (2) T_step timing CPU vs GPU; (3) the

@@ -155,6 +155,22 @@ equation, unit system, and the settled stochastic-LLG design.
 Dev deps are path-devs: `Pkg.develop(path = "../SLCEMonteCarlo.jl")` and
 `../SLCE.jl` (Manifest gitignored).
 
+The GPU benches (`bench/bench_gpu_llg.jl`, `bench/bench_gpu_qtb.jl`) run in this
+package's **own** environment, `bench/Project.toml` — it carries CUDA, which the
+shared `@slce` env deliberately does not. Set it up once per machine:
+
+```julia
+Pkg.activate("bench")
+Pkg.develop([PackageSpec(path = "../SLCE.jl"),
+             PackageSpec(path = "../SLCEMonteCarlo.jl"), PackageSpec(path = ".")])
+```
+
+Its `Project.toml` is tracked and its `Manifest.toml` is not (the dev paths are
+machine-specific). Do **not** borrow SLCEMonteCarlo's `bench/gpu` env for these:
+that was the kugui arrangement until 2026-07-27, and it forced a permanently
+divergent tracked file on the cluster — a downstream dep in the upstream repo,
+invisible locally and rediscovered as a broken job.
+
 ## References
 
 - `SPEC.md` — working equation, units, layout, validation pyramid, and the

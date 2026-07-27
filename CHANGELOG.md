@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `bench/Project.toml`: this package's own GPU bench environment, carrying CUDA
+  (which the shared `@slce` env deliberately does not). The two GPU benches used
+  to borrow `SLCEMonteCarlo.jl/bench/gpu` on the cluster, which meant the
+  upstream repo's tracked `Project.toml` had to list `SLCEDynamics` — a
+  downstream dependency in the upstream repo, present only in the cluster's copy
+  and therefore a permanently divergent tracked file there (it broke a job once
+  when an rsync overwrote it, and it was the last obstacle to updating the
+  cluster by `git pull` instead of rsync). The bench headers and `CLAUDE.md` now
+  document the one-time per-machine setup; the `Manifest.toml` stays untracked.
+
 ### Changed — BREAKING: the upstream `Observable` contract is now `f(view)`
 
 - `SLCEMonteCarlo.Observable` takes a single `MCView` argument

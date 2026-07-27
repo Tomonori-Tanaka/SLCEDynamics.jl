@@ -11,6 +11,10 @@ lcov.info
 # repo where you DO want the Manifest tracked.
 /Manifest.toml
 /test/oracle/Manifest.toml
+# The GPU bench environment: its Project.toml IS tracked (the three SLCE packages
+# are path-deved into it per machine, so only the Manifest is machine-specific).
+/bench/Manifest.toml
+bench/*.log
 
 # Documenter build output
 /docs/build/
