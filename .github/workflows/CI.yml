@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  test:
+    name: tests — Julia ${{ matrix.version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["1.12"]
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      # Two path-dev dependencies, checked out as SIBLINGS — the docs environment's
+      # `[sources]` entries are relative (`../../SLCE.jl`, `../../SLCEMonteCarlo.jl`),
+      # so the layout is required there and kept here for one convention.
+      - uses: actions/checkout@v4
+        with:
+          path: SLCEDynamics.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: Tomonori-Tanaka/SLCE.jl
+          path: SLCE.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: Tomonori-Tanaka/SLCEMonteCarlo.jl
+          path: SLCEMonteCarlo.jl
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+      - uses: julia-actions/cache@v2
+      - name: Develop the path dependencies and instantiate
+        run: |
+          julia --project=SLCEDynamics.jl -e '
+            using Pkg
+            Pkg.develop([PackageSpec(path = "SLCE.jl"),
+                         PackageSpec(path = "SLCEMonteCarlo.jl")])
+            Pkg.instantiate()'
+      # Both operating systems on purpose: the thermostat draws and the accept-free
+      # but libm-heavy integrator stages make long seeded trajectories platform
+      # sensitive in their statistics, even where the code is bit-identical. The
+      # sibling package learned this the hard way (SLCEMonteCarlo `857f5a6`).
+      #
+      # JULIA_NUM_THREADS > 1 is REQUIRED: this package's determinism gates lean on
+      # SLCEMonteCarlo's `energy_gradient!`, whose contract is bit-identity for ANY
+      # task count. At one thread that contract is never exercised.
+      - name: Run the test suite
+        run: julia --project=SLCEDynamics.jl -e 'using Pkg; Pkg.test()'
+        env:
+          TEST_MODE: all
+          JULIA_NUM_THREADS: "4"
+
+  docs:
+    name: documentation build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: SLCEDynamics.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: Tomonori-Tanaka/SLCE.jl
+          path: SLCE.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: Tomonori-Tanaka/SLCEMonteCarlo.jl
+          path: SLCEMonteCarlo.jl
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12"
+      - uses: julia-actions/cache@v2
+      # `Pkg.test()` never builds the docs: a detached docstring or an `@docs` block
+      # naming something undocumented is invisible to the suite and only a strict
+      # Documenter build catches it (found by hand in a sibling on 2026-07-27).
+      - name: Instantiate the docs environment
+        run: julia --project=SLCEDynamics.jl/docs -e 'using Pkg; Pkg.instantiate()'
+      - name: Build the Documenter site
+        run: julia --project=SLCEDynamics.jl/docs SLCEDynamics.jl/docs/make.jl
