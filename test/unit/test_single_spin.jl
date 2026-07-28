@@ -1,6 +1,6 @@
 # Validation gate (a): a single spin in a constant external field has an analytic
 # solution — uniform Larmor precession at α = 0, the log-tangent damped spiral at
-# α > 0. The SCE coupling of the fixture is made negligible (J = 1e-20) so the
+# α > 0. The SLCE coupling of the fixture is made negligible (J = 1e-20) so the
 # Zeeman term dominates; Depondt–Mertens is EXACT for a constant rotation vector,
 # so the α = 0 trajectory must match pointwise to rounding.
 

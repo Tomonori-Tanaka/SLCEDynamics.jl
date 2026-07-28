@@ -1,10 +1,15 @@
 # SLCEDynamics.jl
 
-Atomistic spin dynamics (Landau–Lifshitz–Gilbert) for fitted spin-cluster-expansion
-(SCE) models — the dynamics member of the SCE family:
+[![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://tomonori-tanaka.github.io/SLCEDynamics.jl/dev/)
+[![CI](https://github.com/Tomonori-Tanaka/SLCEDynamics.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/Tomonori-Tanaka/SLCEDynamics.jl/actions/workflows/CI.yml)
 
-- [`SLCE.jl`](../SLCE.jl) fits the model (energy + torque co-fit),
-- [`SLCEMonteCarlo.jl`](../SLCEMonteCarlo.jl) does equilibrium thermodynamics,
+**Documentation:** <https://tomonori-tanaka.github.io/SLCEDynamics.jl/dev/>
+
+Atomistic spin dynamics (Landau–Lifshitz–Gilbert) for fitted spin–lattice cluster-expansion
+(SLCE) models — the dynamics member of the SLCE family:
+
+- [`SLCE.jl`](https://github.com/Tomonori-Tanaka/SLCE.jl) fits the model (energy + torque co-fit),
+- [`SLCEMonteCarlo.jl`](https://github.com/Tomonori-Tanaka/SLCEMonteCarlo.jl) does equilibrium thermodynamics,
 - **this package** integrates the real-time LLG equation of motion on the same
   tiled supercell Hamiltonian, through `SLCEMonteCarlo`'s exact all-site gradient
   `energy_gradient!`.
@@ -41,7 +46,7 @@ Atomistic spin dynamics (Landau–Lifshitz–Gilbert) for fitted spin-cluster-ex
   heat → 0 as T → 0), no zero-point term, zero extra RNG draws per step, and the
   classical mode stays byte-identical. See `docs/src/guide/quantum_thermostat.md`
   for the validity window and the statistics caveats.
-- **GPU path** (`run_llg_gpu`, A100-validated: 25.0× vs same-node 8-task CPU at
+- **GPU path** (`gpu_run_llg`, A100-validated: 25.0× vs same-node 8-task CPU at
   the l044 8³ production model): the same runs on a KernelAbstractions backend —
   same noise stream (a same-seed CPU/GPU pair is one stochastic realization),
   same result/checkpoint semantics, bitwise reproducible per

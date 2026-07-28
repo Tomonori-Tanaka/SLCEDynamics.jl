@@ -1,5 +1,5 @@
 """
-Atomistic spin dynamics (Landau–Lifshitz–Gilbert) on fitted spin-cluster-expansion
+Atomistic spin dynamics (Landau–Lifshitz–Gilbert) on fitted spin–lattice cluster-expansion
 models, on top of `SLCEMonteCarlo.jl`'s tiled Hamiltonian and its exact all-site
 gradient `energy_gradient!`.
 
@@ -9,7 +9,7 @@ The working equation, for unit spin directions `e_i` with per-site moment magnit
     de_i/dt = g_i / (ħ · magmom_i · (1 + α_i²)) · [ e_i × G_i + α_i e_i × (e_i × G_i) ]
 
 with `G_i = ∂E/∂e_i` (model energy units, eV for DFT-fitted models) the sum of the
-SCE gradient and the Zeeman gradient `−magmom_i·μ_B·B_ext`. μ_B enters only at the
+SLCE gradient and the Zeeman gradient `−magmom_i·μ_B·B_ext`. μ_B enters only at the
 tesla boundary; the core evolution carries only `ħ` and the per-site `g/magmom`.
 Time is in femtoseconds (`HBAR_EV_FS`). The torque convention matches the ecosystem
 (`τ_i = −e_i × G_i = m_i × B_eff,i`, the physical / Landau–Lifshitz torque), and
@@ -30,7 +30,8 @@ using Statistics: mean
 using SLCE: Crystal, n_atoms
 using SLCEMonteCarlo: SLCEMonteCarlo, TiledHamiltonian, n_sites, Observable
 using SLCEMonteCarlo: SpinConfig, site_atom, energy_gradient!
-using SLCEMonteCarlo: resolve_kt, philox_block, philox_normal2
+using SLCE: resolve_kt                 # the family's kelvin ↔ model-energy convention
+using SLCEMonteCarlo: philox_block, philox_normal2
 using SLCEMonteCarlo: Evaluable, ObservableStat, standard_evaluables
 using SLCEMonteCarlo: LogBinner, BinStore, bin_means, jackknife, std_error, tau_int
 using SLCEMonteCarlo: model_fingerprint, resume
@@ -50,7 +51,7 @@ public AbstractIntegrator
 public channel_sumrule
 # GPU path (exported 2026-07-19: A100 GO 25x + the quantum-device smoke landed;
 # GPULLGState stays public-unexported machinery)
-export run_llg_gpu
+export gpu_run_llg
 public GPULLGState
 export ClassicalThermostat, QuantumThermostat
 public AbstractThermostat, ColoredNoiseFilter

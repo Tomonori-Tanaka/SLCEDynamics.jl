@@ -53,7 +53,7 @@
         @test_throws ArgumentError LLGProblem(H; magmom = "two")
     end
 
-    @testset "dynamical energy = SCE + Zeeman over active sites" begin
+    @testset "dynamical energy = SLCE + Zeeman over active sites" begin
         prob = LLGProblem(H; magmom = 2.0, b_ext = (0.0, 0.0, 3.0))
         config = _rand_config(rng, H)
         ez = sum(-2.0 * SD.MU_B_EV_T * 3.0 * config[s][3]

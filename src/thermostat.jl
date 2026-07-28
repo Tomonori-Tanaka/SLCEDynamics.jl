@@ -283,7 +283,7 @@ end
     return (UInt32(site), lo, slot, _DOMAIN_SD | hi)
 end
 
-# The shared quantum-thermostat resolution of `run_llg` AND `run_llg_gpu`
+# The shared quantum-thermostat resolution of `run_llg` AND `gpu_run_llg`
 # (one definition — the validation and the τ bound must never drift between
 # the two drivers): returns `nothing` for the classical thermostat, else
 # validates and builds the freshly-initialized filter state.

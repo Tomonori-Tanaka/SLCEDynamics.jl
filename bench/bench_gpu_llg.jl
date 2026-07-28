@@ -48,8 +48,8 @@ gH = MC.GPUTiledHamiltonian(BACKEND, H)
 kw = (; dt = 0.05, kT = 0.02, seed = 11, measure_interval = 1000)
 
 # --- 1. smoke ------------------------------------------------------------------------
-r1 = SD.run_llg_gpu(prob, c0, gH; kw..., nsteps = 20)
-r2 = SD.run_llg_gpu(prob, c0, gH; kw..., nsteps = 20)
+r1 = SD.gpu_run_llg(prob, c0, gH; kw..., nsteps = 20)
+r2 = SD.gpu_run_llg(prob, c0, gH; kw..., nsteps = 20)
 r1.config == r2.config || error("repeat identity FAILED — do not bench")
 rc = run_llg(prob, c0; kw..., nsteps = 20)
 dev = maximum(norm.(rc.config .- r1.config))
@@ -60,8 +60,8 @@ flush(stdout)
 
 # --- 2. timing -----------------------------------------------------------------------
 nsteps_gpu = 50
-SD.run_llg_gpu(prob, c0, gH; kw..., nsteps = 5)          # warmup/compile
-t_gpu = @elapsed SD.run_llg_gpu(prob, c0, gH; kw..., nsteps = nsteps_gpu)
+SD.gpu_run_llg(prob, c0, gH; kw..., nsteps = 5)          # warmup/compile
+t_gpu = @elapsed SD.gpu_run_llg(prob, c0, gH; kw..., nsteps = nsteps_gpu)
 gpu_ms = 1e3 * t_gpu / nsteps_gpu
 nsteps_cpu = max(2, round(Int, 5_000 / H.n_sites))
 run_llg(prob, c0; kw..., nsteps = 1, ntasks = Threads.nthreads())

@@ -1,5 +1,5 @@
 # User-defined observables: `run_llg` accepts the SAME `Observable(name, ncomp, f)`
-# definitions as the SLCEMonteCarlo drivers (`f(config, energy, H)` with the SCE
+# definitions as the SLCEMonteCarlo drivers (`f(config, energy, H)` with the SLCE
 # energy) and records one `ncomp × n_measurements` time-series matrix per name.
 
 @testset "observables" begin
@@ -21,8 +21,8 @@
         for k = 1:nm
             @test SVector{3,Float64}(r.series[:m][:, k]) ≈ r.mean_spins[k] rtol = 1e-14
         end
-        # the observable contract feeds the SCE energy: with b_ext = 0 the
-        # recorded dynamical energy IS the SCE energy, bitwise
+        # the observable contract feeds the SLCE energy: with b_ext = 0 the
+        # recorded dynamical energy IS the SLCE energy, bitwise
         @test vec(r.series[:energy]) == r.energies
     end
 
@@ -37,7 +37,7 @@
         @test r.series[:ez1][1, end] == r.config[1][3]
         @test SVector{3,Float64}(r.series[:s12][:, end]) ==
               r.config[1] + r.config[2]
-        # dynamical energy = SCE energy + Zeeman (all sites active here)
+        # dynamical energy = SLCE energy + Zeeman (all sites active here)
         mz = sum(c[3] for c in r.config)
         @test r.energies[end] ≈
               r.series[:esce][1, end] - 2.0 * SD.MU_B_EV_T * bz * mz atol = 1e-14

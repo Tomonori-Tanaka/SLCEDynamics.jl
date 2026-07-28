@@ -1,5 +1,11 @@
 # Semi-quantum (colored-noise) thermostat — decision record
 
+> **Naming note (2026-07-28).** This is a dated decision record and is kept as
+> written; the names below are the ones the decision was taken under. Renamed
+> since, in the family-wide naming batch: `run_llg_gpu` → `gpu_run_llg`. The current spelling is what
+> the code, `SPEC.md` and the API reference use.
+
+
 Settled 2026-07-19 by a two-proposal design (physics/numerics + architecture)
 plus an adversarial review that adjudicated their one seam conflict and reran
 the fit experiments. This file is the condensed authority; the working equation

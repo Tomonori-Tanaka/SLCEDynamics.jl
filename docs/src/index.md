@@ -1,22 +1,22 @@
 # SLCEDynamics.jl
 
-Atomistic spin dynamics for fitted SCE (symmetry-adapted cluster expansion) models
+Atomistic spin dynamics for fitted SLCE (spin–lattice cluster expansion) models
 from `SLCE.jl`: integrate the Landau–Lifshitz–Gilbert equation — deterministic,
 stochastic (classical white noise), or semi-quantum (colored-noise thermostat) — on
 `SLCEMonteCarlo.jl`'s tiled supercell Hamiltonian, with equilibrium statistics that
 reuse the MC observable machinery, the dynamical structure factor ``S(q,\omega)``,
 bit-reproducible checkpoint/restart, and a KernelAbstractions GPU path.
 
-## Where it sits in the SCE family
+## Where it sits in the SLCE family
 
 | Package | Role |
 |---|---|
-| `SLCE.jl` | fits the SCE model (the input here) |
+| `SLCE.jl` | fits the SLCE model (the input here) |
 | `SLCEMonteCarlo.jl` | equilibrium thermodynamics: Metropolis, annealing, replica exchange |
 | **`SLCEDynamics.jl`** | real-time dynamics: LLG / sLLG, ``S(q,\omega)``, QTB noise |
 
 The fitted model enters only through `SLCEMonteCarlo`'s `TiledHamiltonian` and its
-exact all-site gradient `energy_gradient!` — never through SCE internals. Observable
+exact all-site gradient `energy_gradient!` — never through SLCE internals. Observable
 and `Evaluable` definitions written for the MC drivers plug into the dynamics
 drivers unchanged (the same bindings are re-exported here).
 
@@ -49,7 +49,7 @@ The package follows the sibling packages' discipline:
 - ``S(q,\omega)``: the full Hermitian tensor on a two-sided frequency axis, with the
   elastic tensor separated, Welch averaging, and seed ensembles — conventions pinned
   by exact analytic gates.
-- Crash-safe JLD2 checkpoint/restart, and a GPU driver (`run_llg_gpu`) with the same
+- Crash-safe JLD2 checkpoint/restart, and a GPU driver (`gpu_run_llg`) with the same
   noise stream and result semantics as the CPU path.
 
 ## Reading order

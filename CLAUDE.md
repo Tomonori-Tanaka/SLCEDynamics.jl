@@ -6,7 +6,7 @@
 
 ## Project goal
 
-Atomistic spin dynamics (LLG / stochastic LLG) on fitted SCE models, on top of
+Atomistic spin dynamics (LLG / stochastic LLG) on fitted SLCE models, on top of
 `SLCEMonteCarlo.jl` (`TiledHamiltonian` + `energy_gradient!`). Priority: physical
 correctness of the equation of motion and thermostat (validated against analytic
 solutions and, for finite T, against `SLCEMonteCarlo` equilibrium averages) and
@@ -19,7 +19,7 @@ equation, unit system, and the settled stochastic-LLG design.
   external field in **tesla** only at the boundary (`MU_B_EV_T`); μ_B cancels in
   the core evolution (`p_i = g_i/(ħ·magmom_i·(1+α_i²))` carries only ħ and
   g/magmom). Temperature (when the thermostat lands): reuse
-  `SLCEMonteCarlo.resolve_kt` — `temperature`[K] XOR `kT`[eV], never both.
+  `SLCE.resolve_kt` — `temperature`[K] XOR `kT`[eV], never both.
 - **Spins are unit vectors** (`SpinConfig = Vector{SVector{3,Float64}}`);
   `magmom` [μ_B] is a separate per-site parameter (an explicit `LLGProblem`
   argument — a fitted `SLCEModel` does not carry per-atom moments).
@@ -28,7 +28,7 @@ equation, unit system, and the settled stochastic-LLG design.
   `ω = −p(G + α e×G)`; dissipation `dE/dt = −Σ p α|G_⊥|² ≤ 0`. γ > 0; a spin at
   +x in B ∥ +z moves toward +y. Larmor anchor: g = 2, 1 T → 27.9925 GHz.
 - **Zeeman gradient is NOT tangent-projected** (deliberate — makes constant-field
-  Depondt rotation exact); the SCE gradient arrives projected from
+  Depondt rotation exact); the SLCE gradient arrives projected from
   `energy_gradient!`. Both are valid discretizations; do not "fix" either way
   without moving the single-spin exactness gate.
 
@@ -157,9 +157,9 @@ equation, unit system, and the settled stochastic-LLG design.
   downstream.
 - **`Observable` contract ↔ SLCEMonteCarlo's**: `run_llg` reuses
   `SLCEMonteCarlo.Observable` verbatim — `f(v::SLCEMonteCarlo.MCView)`, with
-  `v.energy` = SCE energy (intercept excluded, Zeeman NOT included) — so one
+  `v.energy` = SLCE energy (intercept excluded, Zeeman NOT included) — so one
   definition measures identical values in both packages. `LLGResult.energies` is
-  the *dynamical* energy (SCE + Zeeman) — the two differ whenever `b_ext ≠ 0`
+  the *dynamical* energy (SLCE + Zeeman) — the two differ whenever `b_ext ≠ 0`
   (`test_observables.jl` pins the split). `_measure!` builds the view with an
   **empty** `disps`: spin dynamics has no displacement channel, so a displacement
   observable must throw here rather than read zeros. If SLCEMonteCarlo adds a

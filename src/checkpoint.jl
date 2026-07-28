@@ -275,7 +275,7 @@ thermal noise is a stateless function of `(seed, site, step)`, so no RNG state
 exists to restore; a quantum run's filter state is restored verbatim).
 Calling it on the checkpoint of a *completed* run
 reconstructs that run's `LLGResult` without stepping (idempotent — safe in a
-job-array retry loop). A checkpoint written by `run_llg_gpu` is refused here —
+job-array retry loop). A checkpoint written by `gpu_run_llg` is refused here —
 resume it with the `resume(path, prob, gH)` method.
 
 The caller re-supplies the `LLGProblem` and the observable *functions* (closures
@@ -307,7 +307,7 @@ function SLCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
     ntasks >= 1 || throw(ArgumentError("ntasks must be ≥ 1; got $ntasks"))
     data = _read_llg_ckpt(path, prob, observables)
     data.compute == "cpu" || error(
-        "this checkpoint was written by run_llg_gpu (compute = " *
+        "this checkpoint was written by gpu_run_llg (compute = " *
         "\"$(data.compute)\", workgroupsize = $(data.workgroupsize)) — resume " *
         "it with resume(path, prob, gH::GPUTiledHamiltonian; ...)")
     ns_t = _resume_target(data, nsteps)

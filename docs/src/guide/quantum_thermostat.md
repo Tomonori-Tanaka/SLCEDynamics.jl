@@ -38,7 +38,7 @@ realization. At step 0 the filter state is initialized in its exact stationary l
 carried state before step 1.
 
 The runtime cost is negligible: zero extra draws per step, and the biquad cascade
-is arithmetic-light next to the SCE gradient. On the A100 GPU path the measured
+is arithmetic-light next to the SLCE gradient. On the A100 GPU path the measured
 quantum-vs-classical step-time overhead at the l044 production sizes was within
 timing noise at 4³ and **+0.4%** at 8³ (see [GPU](gpu.md) and the decision record
 `docs/specs/quantum-thermostat.md` Q4) — pick the thermostat on physics, not cost.

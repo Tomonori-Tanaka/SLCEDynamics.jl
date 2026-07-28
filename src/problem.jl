@@ -6,12 +6,12 @@
     LLGProblem(H::TiledHamiltonian; magmom, alpha = 0.0, g = 2.0,
                b_ext = (0.0, 0.0, 0.0)) -> LLGProblem
 
-Definition of one LLG dynamics run on the SCE Hamiltonian `H`.
+Definition of one LLG dynamics run on the SLCE Hamiltonian `H`.
 
 - `magmom` (required): moment magnitudes in μ_B — a scalar (uniform), a vector of
   length `n_sites(H)`, or a vector with one entry per training-cell atom (tiled to
   the supercell via `site_atom`). Must be positive and finite on every **active**
-  site; inactive sites (no adjacent SCE instance — outside the fitted magnetic
+  site; inactive sites (no adjacent SLCE instance — outside the fitted magnetic
   subsystem) are frozen entirely and their entries are ignored.
 - `alpha`: Gilbert damping, scalar or per-site/per-atom vector, `≥ 0`.
 - `g`: gyromagnetic g-factor, scalar or per-site/per-atom vector, `> 0`. With
@@ -103,7 +103,7 @@ end
 """
     SLCEMonteCarlo.total_energy(prob::LLGProblem, config::SpinConfig) -> Float64
 
-The dynamical energy of `config`: the SCE energy (`total_energy(prob.H, config)`,
+The dynamical energy of `config`: the SLCE energy (`total_energy(prob.H, config)`,
 intercept excluded) plus the Zeeman energy `−Σ_i magmom_i·μ_B·(e_i·b_ext)` over
 active sites. This is the conserved quantity at `α = 0` and the monotonically
 decreasing one at `α > 0` (with `T = 0`).

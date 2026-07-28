@@ -1,7 +1,7 @@
 # Physical constants. `HBAR_EV_FS` is an exact ratio of SI defining constants
 # (h and e are exact since the 2019 SI); `MU_B_EV_T` carries the CODATA-2018
 # measured μ_B. `KB_EV` (for the stochastic thermostat) is NOT redefined here —
-# reuse `SLCEMonteCarlo.KB_EV` / `SLCEMonteCarlo.resolve_kt`.
+# reuse `SLCE.KB_EV` / `SLCE.resolve_kt`, the one definition the whole family shares.
 
 """
     HBAR_EV_FS

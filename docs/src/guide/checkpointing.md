@@ -65,7 +65,7 @@ the measurements recorded so far. v1/v2 files are back-read (as `"cpu"` /
 
 ## Compute-switch policy
 
-`resume(path, prob)` refuses a checkpoint written by `run_llg_gpu`, naming the
+`resume(path, prob)` refuses a checkpoint written by `gpu_run_llg`, naming the
 device method; `resume(path, prob, gH)` continues bit-identically for the same
 (backend, `workgroupsize`) and refuses **any** compute switch — a CPU file, a
 different backend tag, or a different workgroup size — unless

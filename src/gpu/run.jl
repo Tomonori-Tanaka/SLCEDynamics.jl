@@ -1,10 +1,10 @@
-# The GPU driver: `run_llg_gpu` + `_llg_loop_gpu!` + the GPU resume method
+# The GPU driver: `gpu_run_llg` + `_llg_loop_gpu!` + the GPU resume method
 # (decision record docs/specs/gpu-llg.md). The loop downloads a host snapshot
 # ONLY on measurement/checkpoint events (`_ck_due` mirrors `_ck_llg!`'s
 # cadence); between events the per-step launches queue with no synchronization.
 
 """
-    run_llg_gpu(prob::LLGProblem, config0::SpinConfig, gH;
+    gpu_run_llg(prob::LLGProblem, config0::SpinConfig, gH;
                 dt, nsteps, integrator = DepondtMertens(),
                 observables = Observable[], temperature = nothing, kT = nothing,
                 seed = nothing, thermostat = ClassicalThermostat(),
@@ -34,7 +34,7 @@ fold order depends on `workgroupsize` (pinned default 128), so unlike the CPU
 path it is part of the contract, and CPU↔GPU trajectories are never bitwise
 equal. The result's `compute` field and the checkpoint record all three.
 """
-function run_llg_gpu(prob::LLGProblem, config0::SpinConfig, gH;
+function gpu_run_llg(prob::LLGProblem, config0::SpinConfig, gH;
                      dt::Real, nsteps::Integer,
                      integrator::AbstractIntegrator = DepondtMertens(),
                      observables::Vector{Observable} = Observable[],
@@ -76,7 +76,7 @@ function run_llg_gpu(prob::LLGProblem, config0::SpinConfig, gH;
     if thermo
         kts = resolve_kt(temperature, kT)
         length(kts) == 1 || throw(ArgumentError(
-            "run_llg_gpu takes a single temperature; got $(length(kts))"))
+            "gpu_run_llg takes a single temperature; got $(length(kts))"))
         kt = kts[1]
         for s = 1:n
             H.site_active[s] || continue
@@ -178,7 +178,7 @@ end
            checkpoint = path, checkpoint_interval = nothing) -> LLGResult
 
 Continue a checkpointed run **on the device** `gH` was built for. For a
-checkpoint written by [`run_llg_gpu`](@ref) on the SAME backend and workgroup
+checkpoint written by [`gpu_run_llg`](@ref) on the SAME backend and workgroup
 size, the continuation (and any `nsteps` extension) is bit-identical to the
 uninterrupted device run.
 

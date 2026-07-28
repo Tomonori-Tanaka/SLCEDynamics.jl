@@ -5,7 +5,7 @@ CurrentModule = SLCEDynamics
 ```
 
 [`run_llg`](@ref) integrates the Landau–Lifshitz–Gilbert equation for unit spin
-directions ``\mathbf e_i`` on the SCE Hamiltonian, with fixed step `dt` [fs]:
+directions ``\mathbf e_i`` on the SLCE Hamiltonian, with fixed step `dt` [fs]:
 
 ```math
 \frac{d\mathbf e_i}{dt} = p_i\,\bigl[\mathbf e_i \times \mathbf G_i
@@ -15,7 +15,7 @@ p_i = \frac{g_i}{\hbar\, \mathrm{magmom}_i\,(1 + \alpha_i^2)},
 ```
 
 where ``\mathbf G_i = \partial E/\partial \mathbf e_i`` (model energy units) is the
-sum of the exact SCE gradient (`SLCEMonteCarlo.energy_gradient!`) and the Zeeman
+sum of the exact SLCE gradient (`SLCEMonteCarlo.energy_gradient!`) and the Zeeman
 gradient ``-\mathrm{magmom}_i\,\mu_B\,\mathbf B_\mathrm{ext}``. The torque convention
 matches the ecosystem (``\boldsymbol\tau_i = -\mathbf e_i \times \mathbf G_i``, the
 physical / Landau–Lifshitz torque), and the damping term strictly dissipates:
@@ -87,7 +87,7 @@ Nothing is hard-coded into the stepping loop: `run_llg` records a vector of
 `SLCEMonteCarlo.Observable`s — the **same** definitions the MC drivers accept
 (`Observable(name, ncomp, f)` with `f(v::SLCEMonteCarlo.MCView)`), including
 `SLCEMonteCarlo.standard_observables(H)` and user-defined ones. Per the `Observable`
-contract, `energy` is the **SCE** energy (model units, intercept excluded, Zeeman
+contract, `energy` is the **SLCE** energy (model units, intercept excluded, Zeeman
 not included), so a definition measures identical values on the same configuration
 in both packages. Each series lands in `LLGResult.series[name]` as an
 `ncomp × n_measurements` matrix; `Evaluable`s enter downstream, through
@@ -95,7 +95,7 @@ in both packages. Each series lands in `LLGResult.series[name]` as an
 
 ## Energy conservation at ``\alpha = 0``
 
-At zero damping the dynamical energy (SCE + Zeeman) is conserved; the fixed-step
+At zero damping the dynamical energy (SLCE + Zeeman) is conserved; the fixed-step
 integrator leaves an ``O(dt^2)`` drift. On the cubic ferromagnet of
 [Getting started](../getting_started.md):
 

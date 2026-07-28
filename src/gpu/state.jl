@@ -8,7 +8,7 @@
     GPULLGState(gH::GPUTiledHamiltonian, prob::LLGProblem, config0::SpinConfig,
                 sigma::Vector{Float64}, fstate = nothing) -> GPULLGState
 
-Device arrays for one [`run_llg_gpu`](@ref): the configuration and the
+Device arrays for one [`gpu_run_llg`](@ref): the configuration and the
 integrator scratch (`depred`/`domega1`/`dG`/`dgth` — the device sibling of
 `_LLGScratch`), the per-site problem parameters uploaded once
 (`dgzee`/`dpref`/`dalpha`/`dsigma`/`dactive`), the upstream gradient scratch,

@@ -1,8 +1,8 @@
 # SLCEDynamics.jl — architecture
 
-Atomistic spin dynamics (LLG / stochastic LLG) on fitted SCE models. Consumes
+Atomistic spin dynamics (LLG / stochastic LLG) on fitted SLCE models. Consumes
 `SLCEMonteCarlo`'s `TiledHamiltonian` and its public all-site gradient
-`energy_gradient!` — never SCE internals.
+`energy_gradient!` — never SLCE internals.
 
 ## Physics
 
@@ -28,13 +28,13 @@ boundary (`MU_B_EV_T`). Anchor: g = 2, 1 T → 27.9925 GHz (`test_units.jl`).
 
 | File | Contents |
 |---|---|
-| `src/units.jl` | `HBAR_EV_FS` (exact SI ratio), `MU_B_EV_T` (CODATA-2018). `KB_EV`/`resolve_kt` are reused from `SLCEMonteCarlo`, never redefined |
-| `src/problem.jl` | `LLGProblem` (Hamiltonian + per-site `magmom`/`alpha`/`g` + `b_ext`; prefactor `pref` and Zeeman gradient `gzee` resolved at construction; scalar / per-atom / per-site parameter resolution via `site_atom`), `SLCEMonteCarlo.total_energy(::LLGProblem, config)` = SCE + Zeeman |
+| `src/units.jl` | `HBAR_EV_FS` (exact SI ratio), `MU_B_EV_T` (CODATA-2018). `KB_EV`/`resolve_kt` are reused from `SLCE`, never redefined |
+| `src/problem.jl` | `LLGProblem` (Hamiltonian + per-site `magmom`/`alpha`/`g` + `b_ext`; prefactor `pref` and Zeeman gradient `gzee` resolved at construction; scalar / per-atom / per-site parameter resolution via `site_atom`), `SLCEMonteCarlo.total_energy(::LLGProblem, config)` = SLCE + Zeeman |
 | `src/integrators.jl` | `DepondtMertens` (rotation Heun, norm-exact, default), `HeunProjected` (independent cross-check); `_omega` / `_rotate` / `_step!` |
-| `src/run.jl` | `run_llg` driver (fixed step; measurements at step 0, every `measure_interval`, and always at the final step) + `LLGResult`; user observables — the SAME `SLCEMonteCarlo.Observable(name, ncomp, f)` definitions the MC drivers accept (`f(v::MCView)`, fed the **SCE** energy in `v.energy` so a definition measures identically in both packages; `v.disps` is empty here — no displacement channel) — recorded as `ncomp × n_measurements` time-series matrices in `LLGResult.series`; the shared stepping loop `_llg_loop!` (also the resume entry) |
+| `src/run.jl` | `run_llg` driver (fixed step; measurements at step 0, every `measure_interval`, and always at the final step) + `LLGResult`; user observables — the SAME `SLCEMonteCarlo.Observable(name, ncomp, f)` definitions the MC drivers accept (`f(v::MCView)`, fed the **SLCE** energy in `v.energy` so a definition measures identically in both packages; `v.disps` is empty here — no displacement channel) — recorded as `ncomp × n_measurements` time-series matrices in `LLGResult.series`; the shared stepping loop `_llg_loop!` (also the resume entry) |
 | `src/checkpoint.jl` | JLD2 checkpoint/resume (schema below) — `run_llg(...; checkpoint, checkpoint_interval)` writer + `resume(path, prob::LLGProblem)` (a method of `SLCEMonteCarlo.resume`, re-exported) |
 | `src/fft.jl` | own power-of-two radix-2 FFT + Hann/rect windows (deliberately not FFTW — determinism; gated against a reference DFT) |
-| `src/gpu/{state,kernels,run}.jl` | the GPU path: `GPULLGState`, the stage/noise/renorm kernels (literal `_omega`/`_rotate`/`_fill_noise!` ports), `run_llg_gpu`/`_llg_loop_gpu!`/the device `resume` method |
+| `src/gpu/{state,kernels,run}.jl` | the GPU path: `GPULLGState`, the stage/noise/renorm kernels (literal `_omega`/`_rotate`/`_fill_noise!` ports), `gpu_run_llg`/`_llg_loop_gpu!`/the device `resume` method |
 | `src/sqw.jl` | S(q,ω): `trajectory_observable`/`trajectory`, `q_path`, `structure_factor` (4 methods) → `SQWResult` (full 3×3 Hermitian tensor + separated elastic tensor), reductions `sqw_diag`/`sqw_trace`/`sqw_perp`/`sqw_plusminus`/`sqw_elastic`, axis helpers, `channel_sumrule` |
 
 ## Conventions and invariants
@@ -187,7 +187,7 @@ sign and normalization frozen by exact deterministic gates (`test_sqw_gates.jl`,
 
 ## GPU path (implemented; A100 GO — 25x at l044 8³)
 
-`run_llg_gpu(prob, config0, gH; …)` (exported since 2026-07-19 — A100 GO
+`gpu_run_llg(prob, config0, gH; …)` (exported since 2026-07-19 — A100 GO
 plus the quantum-device smoke;
 decision record `docs/specs/gpu-llg.md` + SLCEMonteCarlo's G7) runs both
 integrators, deterministic and sLLG, on a KernelAbstractions backend over
@@ -235,7 +235,7 @@ stays Markovian — the QTB approximation; occupations accurate ~1% for
 The shipped filter (`_QT_S_BIQUADS`, provenance `_QT_FILTER_ID`) matches θ
 to 0.41% relative over the occupied band — certificate and constants in
 `docs/specs/quantum-thermostat.md` and `dev/fit_qtb_filter.jl`.
-`ClassicalThermostat`/`QuantumThermostat` are exported. `run_llg_gpu` takes
+`ClassicalThermostat`/`QuantumThermostat` are exported. `gpu_run_llg` takes
 the same `thermostat` kwarg (in-kernel cascade on a transposed device state,
 host-side init) and the GPU `resume` restores quantum files.
 Checkpoint schema v3 (Q-M2, landed): `run/thermostat` always;

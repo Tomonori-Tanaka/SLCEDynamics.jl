@@ -119,18 +119,18 @@ end
         end
     end
 
-    @testset "a3: run_llg_gpu ≡ composite keyed reference (bitwise)" begin
+    @testset "a3: gpu_run_llg ≡ composite keyed reference (bitwise)" begin
         for (H, gH, prob, c0) in ((Hd, gHd, probd, c0d), (Hb, gHb, probb, c0b)),
             integ in (DepondtMertens(), HeunProjected()), ws in (4, 32)
 
-            det = SD.run_llg_gpu(prob, c0, gH; dt = 0.05, nsteps = 7,
+            det = SD.gpu_run_llg(prob, c0, gH; dt = 0.05, nsteps = 7,
                                  integrator = integ, measure_interval = 3,
                                  workgroupsize = ws)
             @test det.compute == "gpu:cpu"
             refc = _ref_gpu_loop(prob, H, c0, 0.05, 7, ws, integ)
             @test det.config == refc
 
-            th = SD.run_llg_gpu(prob, c0, gH; dt = 0.05, nsteps = 7,
+            th = SD.gpu_run_llg(prob, c0, gH; dt = 0.05, nsteps = 7,
                                 integrator = integ, measure_interval = 3,
                                 workgroupsize = ws, kT = 0.02, seed = 9)
             refc2 = _ref_gpu_loop(prob, H, c0, 0.05, 7, ws, integ;
@@ -141,18 +141,18 @@ end
 
     @testset "a4: repeat/seed/ws sensitivity" begin
         kw = (; dt = 0.05, nsteps = 40, kT = 0.02, measure_interval = 10)
-        r1 = SD.run_llg_gpu(probd, c0d, gHd; kw..., seed = 5)
-        r2 = SD.run_llg_gpu(probd, c0d, gHd; kw..., seed = 5)
+        r1 = SD.gpu_run_llg(probd, c0d, gHd; kw..., seed = 5)
+        r2 = SD.gpu_run_llg(probd, c0d, gHd; kw..., seed = 5)
         @test r1.config == r2.config && r1.energies == r2.energies
-        r3 = SD.run_llg_gpu(probd, c0d, gHd; kw..., seed = 6)
+        r3 = SD.gpu_run_llg(probd, c0d, gHd; kw..., seed = 6)
         @test r3.config != r1.config
         # ws is part of the contract — but only sites with MORE adjacency
         # entries than ws see a different fold grouping, so probe it on the
         # entry-rich biquadratic model (the dimer's few entries per site fold
         # identically for any ws)
-        r5 = SD.run_llg_gpu(probb, c0b, gHb; kw..., seed = 5,
+        r5 = SD.gpu_run_llg(probb, c0b, gHb; kw..., seed = 5,
                             workgroupsize = 4)
-        r6 = SD.run_llg_gpu(probb, c0b, gHb; kw..., seed = 5,
+        r6 = SD.gpu_run_llg(probb, c0b, gHb; kw..., seed = 5,
                             workgroupsize = 32)
         @test r5.config != r6.config
     end
@@ -162,8 +162,8 @@ end
         path = joinpath(dir, "gpu.jld2")
         kw = (; dt = 0.05, nsteps = 20, kT = 0.02, seed = 5,
               measure_interval = 4)
-        a = SD.run_llg_gpu(probd, c0d, gHd; kw...)
-        b = SD.run_llg_gpu(probd, c0d, gHd; kw..., checkpoint = path,
+        a = SD.gpu_run_llg(probd, c0d, gHd; kw...)
+        b = SD.gpu_run_llg(probd, c0d, gHd; kw..., checkpoint = path,
                            checkpoint_interval = 7)
         @test a.config == b.config && a.energies == b.energies
         # completed-file reconstruction on the device method
@@ -171,7 +171,7 @@ end
         @test c.config == a.config && c.energies == a.energies
         @test c.compute == "gpu:cpu"
         # extension ≡ uninterrupted device run (absolute-step noise)
-        long = SD.run_llg_gpu(probd, c0d, gHd; kw..., nsteps = 40)
+        long = SD.gpu_run_llg(probd, c0d, gHd; kw..., nsteps = 40)
         ext = resume(path, probd, gHd; nsteps = 40)
         @test ext.config == long.config && ext.energies == long.energies
         # the CPU resume method refuses a GPU file, loudly
@@ -194,10 +194,10 @@ end
                               nm[] > 4 && error("boom")      # measurement 5
                               v.energy
                           end)
-        ref = SD.run_llg_gpu(probd, c0d, gHd; kw...,
+        ref = SD.gpu_run_llg(probd, c0d, gHd; kw...,
                              observables = [Observable(:energy, 1,
                                                        v -> v.energy)])
-        @test_throws ErrorException SD.run_llg_gpu(probd, c0d, gHd; kw...,
+        @test_throws ErrorException SD.gpu_run_llg(probd, c0d, gHd; kw...,
                                                    observables = [boom],
                                                    checkpoint = cpath2,
                                                    checkpoint_interval = 6)
@@ -271,10 +271,10 @@ end
         # classical (the shipped filter reshapes the shared white draws)
         kwq = (; dt = dtf, nsteps = 30, kT = kt, seed = 7,
                measure_interval = 6)
-        rc = SD.run_llg_gpu(probd, c0d, gHd; kwq...)
-        rq = SD.run_llg_gpu(probd, c0d, gHd; kwq...,
+        rc = SD.gpu_run_llg(probd, c0d, gHd; kwq...)
+        rq = SD.gpu_run_llg(probd, c0d, gHd; kwq...,
                             thermostat = SD.QuantumThermostat())
-        rq2 = SD.run_llg_gpu(probd, c0d, gHd; kwq...,
+        rq2 = SD.gpu_run_llg(probd, c0d, gHd; kwq...,
                              thermostat = SD.QuantumThermostat())
         @test rq.config == rq2.config
         @test rq.config != rc.config
@@ -285,25 +285,25 @@ end
         kwc = (; dt = dtf, kT = kt, seed = 5, measure_interval = 4,
                thermostat = SD.QuantumThermostat())
         path = joinpath(dir, "gpuqt.jld2")
-        a = SD.run_llg_gpu(probd, c0d, gHd; kwc..., nsteps = 20)
-        b = SD.run_llg_gpu(probd, c0d, gHd; kwc..., nsteps = 20,
+        a = SD.gpu_run_llg(probd, c0d, gHd; kwc..., nsteps = 20)
+        b = SD.gpu_run_llg(probd, c0d, gHd; kwc..., nsteps = 20,
                            checkpoint = path, checkpoint_interval = 7)
         @test a.config == b.config && a.energies == b.energies
         c = resume(path, probd, gHd)          # completed → reconstruct
         @test c.config == a.config && c.thermostat == "quantum"
         path2 = joinpath(dir, "gpuqt2.jld2")
-        SD.run_llg_gpu(probd, c0d, gHd; kwc..., nsteps = 12,
+        SD.gpu_run_llg(probd, c0d, gHd; kwc..., nsteps = 12,
                        checkpoint = path2)
-        long = SD.run_llg_gpu(probd, c0d, gHd; kwc..., nsteps = 36)
+        long = SD.gpu_run_llg(probd, c0d, gHd; kwc..., nsteps = 36)
         ext = resume(path2, probd, gHd; nsteps = 36)
         @test ext.config == long.config && ext.energies == long.energies
         @test ext.thermostat == "quantum"
         # the CPU method still refuses GPU files (compute check, unchanged)
         @test_throws ErrorException resume(path, probd)
         # GPU quantum validation mirrors the CPU path
-        @test_throws ArgumentError SD.run_llg_gpu(probd, c0d, gHd; dt = dtf,
+        @test_throws ArgumentError SD.gpu_run_llg(probd, c0d, gHd; dt = dtf,
             nsteps = 5, thermostat = SD.QuantumThermostat())
-        @test_throws ArgumentError SD.run_llg_gpu(probd, c0d, gHd; dt = 1.0,
+        @test_throws ArgumentError SD.gpu_run_llg(probd, c0d, gHd; dt = 1.0,
             nsteps = 5, kT = 0.5, seed = 1,
             thermostat = SD.QuantumThermostat())
     end
@@ -315,7 +315,7 @@ end
         ωl = _larmor_omega(2.0, B)
         prob = LLGProblem(H1; magmom = 2.0, b_ext = (0.0, 0.0, B))
         c0 = MC.SpinConfig([SVector(1.0, 0.0, 0.0)])
-        res = SD.run_llg_gpu(prob, c0, gH1; dt = 1.0, nsteps = 3600,
+        res = SD.gpu_run_llg(prob, c0, gH1; dt = 1.0, nsteps = 3600,
                              renorm_interval = 0)
         t = 3600.0
         @test res.config[1] ≈ SVector(cos(ωl * t), sin(ωl * t), 0.0) atol = 1e-9
@@ -329,14 +329,14 @@ end
         pd = LLGProblem(Hd; magmom = 2.0)
         det_cpu = run_llg(pd, c0; dt = 0.05, nsteps = 1000,
                           measure_interval = 100)
-        det_gpu = SD.run_llg_gpu(pd, c0, gHd; dt = 0.05, nsteps = 1000,
+        det_gpu = SD.gpu_run_llg(pd, c0, gHd; dt = 0.05, nsteps = 1000,
                                  measure_interval = 100)
         # linear roundoff envelope (P1): per-step ULP bias × N steps, generous
         @test maximum(norm.(det_cpu.config .- det_gpu.config)) <= 1e-11
         # same-seed sLLG: identical noise stream, only gradient/rotation ULPs
         th_cpu = run_llg(probd, c0d; dt = 0.05, nsteps = 200, kT = 0.02,
                          seed = 5, measure_interval = 50)
-        th_gpu = SD.run_llg_gpu(probd, c0d, gHd; dt = 0.05, nsteps = 200,
+        th_gpu = SD.gpu_run_llg(probd, c0d, gHd; dt = 0.05, nsteps = 200,
                                 kT = 0.02, seed = 5, measure_interval = 50)
         @test maximum(norm.(th_cpu.config .- th_gpu.config)) <= 1e-9
     end
@@ -347,7 +347,7 @@ end
         kt = 0.03
         prob = LLGProblem(H1; magmom = 2.0, alpha = 1.0)
         obs = [Observable(:ez2, 1, v -> v.config[1][3]^2)]
-        r = SD.run_llg_gpu(prob, _uniaxial_config(0.3), gH1; dt = 0.05,
+        r = SD.gpu_run_llg(prob, _uniaxial_config(0.3), gH1; dt = 0.05,
                            nsteps = 60_000, kT = kt, seed = 42,
                            measure_interval = 10, observables = obs)
         st = equilibrium_stats(r; evaluables = Evaluable[])
@@ -357,13 +357,13 @@ end
     end
 
     @testset "validation" begin
-        @test_throws ArgumentError SD.run_llg_gpu(probd, c0d, gHd; dt = 0.05,
+        @test_throws ArgumentError SD.gpu_run_llg(probd, c0d, gHd; dt = 0.05,
                                                   nsteps = 1, workgroupsize = 3)
-        @test_throws ArgumentError SD.run_llg_gpu(probd, c0d, gHd; dt = 0.05,
+        @test_throws ArgumentError SD.gpu_run_llg(probd, c0d, gHd; dt = 0.05,
                                                   nsteps = 1, seed = 1)
         H2 = MC.TiledHamiltonian(_biquadratic_model(0); dims = (3, 1, 1))
         gH2 = MC.GPUTiledHamiltonian(CPU(), H2)
-        @test_throws ArgumentError SD.run_llg_gpu(probd, c0d, gH2; dt = 0.05,
+        @test_throws ArgumentError SD.gpu_run_llg(probd, c0d, gH2; dt = 0.05,
                                                   nsteps = 1)
     end
 end

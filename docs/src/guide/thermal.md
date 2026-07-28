@@ -24,7 +24,7 @@ site — an undamped spin never thermalizes.
 
 Exactly one of two keywords, the ecosystem-wide rule:
 
-- `temperature` — kelvin, converted internally with `SLCEMonteCarlo.KB_EV` (assumes
+- `temperature` — kelvin, converted internally with `SLCE.KB_EV` (assumes
   an eV-fitted model, the convention for DFT-fitted models);
 - `kT` — ``k_B T`` directly in the model's energy units (theory / test runs).
 

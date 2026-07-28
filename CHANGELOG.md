@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the documentation is published
+
+- **<https://tomonori-tanaka.github.io/SLCEDynamics.jl/dev/>** — the Documenter site is
+  now deployed to GitHub Pages by the `documentation build` CI job (`deploydocs`
+  in `docs/make.jl`, `permissions: contents: write` on the job). It was being
+  built on every push and then thrown away.
+- **Per-line source links work**: `remotes = nothing` / `edit_link = nothing` are
+  gone in favour of the real repository, so every docstring on the site links to
+  its own lines on GitHub and each page has an "Edit on GitHub" link.
+- README carries a docs badge, a CI badge and the site URL.
+
+### Changed — BREAKING: the family-wide naming batch
+
+Follows SLCE.jl's third naming batch (see its `CHANGELOG`); landed in all four
+repositories together.
+
+- **`run_llg_gpu` → `gpu_run_llg`** (exported). SLCEMonteCarlo puts the device
+  qualifier in front on all five of its GPU entry points (`gpu_run_sweeps!`,
+  `gpu_metropolis_sweep!`, `gpu_displacement_sweep!`, `gpu_energy_gradient!`,
+  `gpu_zlm_rows!`) and on every GPU type (`GPUTiledHamiltonian`, `GPUChainState`,
+  `GPUGradientScratch`) — as does this package's own `GPULLGState`. This one function
+  put it at the end. Nothing but the name changes; **scripts on a cluster that call
+  `run_llg_gpu` need the one-word edit**.
+- **`resolve_kt` now comes from `SLCE`**, not `SLCEMonteCarlo` — the conversion moved
+  upstream to the package all three samplers share. Same function, same values.
+- **Prose: `SCE` → `SLCE`, "spin–lattice cluster expansion"** — the ratified name;
+  the index page expanded it as "symmetry-adapted cluster expansion", which was wrong.
+  Documentary only; no identifier changed.
+
 ### Fixed
 
 - **`equilibrium_stats` ignored an `Evaluable`'s `scope`**, passing `n_active` to

@@ -4,7 +4,7 @@
 CurrentModule = SLCEDynamics
 ```
 
-[`run_llg_gpu`](@ref) runs the same physics on a KernelAbstractions device: both
+[`gpu_run_llg`](@ref) runs the same physics on a KernelAbstractions device: both
 integrators, deterministic and stochastic (including the quantum thermostat), the
 identical `Observable` contract and `LLGResult` semantics — so
 [`equilibrium_stats`](@ref), [`structure_factor`](@ref), and checkpointing consume
@@ -13,7 +13,7 @@ quantum-device smoke both passed):
 
 ```julia
 gH  = GPUTiledHamiltonian(backend, prob.H)     # exported by SLCEMonteCarlo; build ONCE
-res = run_llg_gpu(prob, config0, gH; dt = 0.05, nsteps = 10^6,
+res = gpu_run_llg(prob, config0, gH; dt = 0.05, nsteps = 10^6,
                   kT = 0.02, seed = 1, checkpoint = "llg_gpu.jld2",
                   checkpoint_interval = 50_000)
 ```
@@ -67,9 +67,9 @@ config0 = SLCEMonteCarlo.from_matrix(randn(Xoshiro(1), 3, n_sites(H)))
 backend = SD.KernelAbstractions.CPU()          # the KA module SD itself uses
 gH = GPUTiledHamiltonian(backend, H)
 
-res1 = run_llg_gpu(prob, config0, gH; dt = 0.5, nsteps = 200,
+res1 = gpu_run_llg(prob, config0, gH; dt = 0.5, nsteps = 200,
                    kT = 0.01, seed = 9)
-res2 = run_llg_gpu(prob, config0, gH; dt = 0.5, nsteps = 200,
+res2 = gpu_run_llg(prob, config0, gH; dt = 0.5, nsteps = 200,
                    kT = 0.01, seed = 9)
 (compute = res1.compute, repeat_bitwise = res1.energies == res2.energies)
 ```
@@ -90,7 +90,7 @@ stay on the CPU path — no performance claims beyond these measurements.
 
 ## Quantum thermostat on the device
 
-`run_llg_gpu` accepts `thermostat = QuantumThermostat()` with the same contract as
+`gpu_run_llg` accepts `thermostat = QuantumThermostat()` with the same contract as
 [`run_llg`](@ref) (temperature required, the same ``k_BT\,\Delta t/\hbar`` bounds):
 the stationary initialization always runs on the host and is uploaded once; the
 in-kernel cascade filters the same white draws as the CPU path, and the GPU
@@ -99,5 +99,5 @@ in-kernel cascade filters the same white draws as the CPU path, and the GPU
 **Measured cost** (kugui A100, `bench/bench_gpu_qtb.jl` on l044, records in
 `docs/specs/quantum-thermostat.md` Q4): the quantum-vs-classical step-time overhead
 was within timing noise at 4³ (40.8 vs 40.3 ms, 2026-07-19) and **+0.4%** at the 8³
-production size (311.3 vs 312.6 ms, 34,816 sites, 2026-07-25) — the SCE gradient
+production size (311.3 vs 312.6 ms, 34,816 sites, 2026-07-25) — the SLCE gradient
 dominates, so the thermostat choice is effectively free.

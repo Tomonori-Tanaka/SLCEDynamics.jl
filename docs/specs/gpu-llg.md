@@ -1,5 +1,11 @@
 # GPU LLG — decision record
 
+> **Naming note (2026-07-28).** This is a dated decision record and is kept as
+> written; the names below are the ones the decision was taken under. Renamed
+> since, in the family-wide naming batch: `run_llg_gpu` → `gpu_run_llg`. The current spelling is what
+> the code, `SPEC.md` and the API reference use.
+
+
 Settled by a two-designer + adversarial-review pass (2026-07-19); the upstream
 half (the device all-site SCE gradient) is SLCEMonteCarlo's G7 record
 (`docs/specs/gpu-prototype.md` there). This file records the consumer-side

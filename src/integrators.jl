@@ -55,7 +55,7 @@ _LLGScratch(n::Int) = _LLGScratch(Vector{SVector{3,Float64}}(undef, n),
                                   SpinConfig(undef, n),
                                   fill(zero(SVector{3,Float64}), n))
 
-# ω_s at spin `e` given the SCE gradient `gsce` and the step's thermal field
+# ω_s at spin `e` given the SLCE gradient `gsce` and the step's thermal field
 # `gth` (site-active callers only).
 @inline function _omega(prob::LLGProblem, s::Int, e::SVector{3,Float64},
                         gsce::SVector{3,Float64},

@@ -8,7 +8,7 @@ Result of one [`run_llg`](@ref). Measurements are taken at step 0, every
 nsteps·dt` and the last measurement describes exactly the returned `config`.
 Fields:
 
-- `times` [fs], `energies` — the dynamical energy (SCE + Zeeman),
+- `times` [fs], `energies` — the dynamical energy (SLCE + Zeeman),
 - `mean_spins` — the unweighted mean direction over **active** sites (the
   `SLCEMonteCarlo` magnetization convention),
 - `series::Dict{Symbol,Matrix{Float64}}` — one `ncomp × n_measurements` matrix
@@ -21,7 +21,7 @@ Fields:
   one it is normalized by in [`equilibrium_stats`](@ref), and the two differ
   exactly when a joint spin–lattice Hamiltonian carries displacement-only sites;
   `compute` is the provenance tag (`"cpu"`, or `"gpu:<backend>"` from
-  `run_llg_gpu` — GPU trajectories are bit-reproducible only for a fixed
+  `gpu_run_llg` — GPU trajectories are bit-reproducible only for a fixed
   backend and workgroup size); `thermostat` is `"classical"` (white noise —
   also for deterministic runs) or `"quantum"` (the colored-noise
   `QuantumThermostat`, whose equilibrium is NOT a Boltzmann ensemble — see
@@ -141,7 +141,7 @@ matches the returned `config` exactly).
   the Monte Carlo drivers accept (`Observable(name, ncomp, f)` with
   `f(v::SLCEMonteCarlo.MCView)`, including `SLCEMonteCarlo.standard_observables(H)`
   and any user-defined ones). Per the `Observable` contract, `v.energy` is the
-  **SCE** energy (model units, intercept excluded, Zeeman not included) so a
+  **SLCE** energy (model units, intercept excluded, Zeeman not included) so a
   definition measures identical values on the same configuration in both packages.
   `v.disps` is **empty** here — spin dynamics has no displacement channel — so a
   displacement observable throws rather than reporting zeros. Each
@@ -281,9 +281,9 @@ function _llg_loop!(spec::_RunSpec, config::SpinConfig, tr::_Trace, step0::Int,
                      _compute_string(spec), _thermostat_string(spec.thermostat))
 end
 
-# One measurement row: the SCE energy is computed once and shared by the
+# One measurement row: the SLCE energy is computed once and shared by the
 # dynamical-energy record (+ Zeeman) and every user observable (which receives it
-# per the `Observable` contract — SCE energy, model units, intercept excluded).
+# per the `Observable` contract — SLCE energy, model units, intercept excluded).
 function _measure!(energies::Vector{Float64}, means::Vector{SVector{3,Float64}},
                    series::Dict{Symbol,Matrix{Float64}},
                    observables::Vector{Observable}, k::Int, t::Float64,

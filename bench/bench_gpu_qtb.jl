@@ -54,8 +54,8 @@ kw = (; dt = 0.05, kT = 0.02, seed = 11, measure_interval = 10)
 qt = (; thermostat = QuantumThermostat())
 
 # --- 1. classical with zero-sized filter allocations ---------------------------------
-rc1 = SD.run_llg_gpu(prob, c0, gH; kw..., nsteps = 20)
-rc2 = SD.run_llg_gpu(prob, c0, gH; kw..., nsteps = 20)
+rc1 = SD.gpu_run_llg(prob, c0, gH; kw..., nsteps = 20)
+rc2 = SD.gpu_run_llg(prob, c0, gH; kw..., nsteps = 20)
 rc1.config == rc2.config || error("classical repeat identity FAILED")
 rc_cpu = run_llg(prob, c0; kw..., nsteps = 20)
 devc = maximum(norm.(rc_cpu.config .- rc1.config))
@@ -64,8 +64,8 @@ devc <= 1e-6 || error("classical same-seed deviation implausibly large")
 flush(stdout)
 
 # --- 2. quantum end-to-end -----------------------------------------------------------
-rq1 = SD.run_llg_gpu(prob, c0, gH; kw..., qt..., nsteps = 20)
-rq2 = SD.run_llg_gpu(prob, c0, gH; kw..., qt..., nsteps = 20)
+rq1 = SD.gpu_run_llg(prob, c0, gH; kw..., qt..., nsteps = 20)
+rq2 = SD.gpu_run_llg(prob, c0, gH; kw..., qt..., nsteps = 20)
 rq1.config == rq2.config || error("quantum repeat identity FAILED")
 rq1.config != rc1.config || error("quantum config identical to classical — filter inert?")
 rq_cpu = run_llg(prob, c0; kw..., qt..., nsteps = 20)
@@ -78,8 +78,8 @@ flush(stdout)
 # --- 3. device checkpoint/resume bitwise ---------------------------------------------
 tmp = mktempdir()
 ckpath = joinpath(tmp, "qtb.jld2")
-ra = SD.run_llg_gpu(prob, c0, gH; kw..., qt..., nsteps = 40)
-SD.run_llg_gpu(prob, c0, gH; kw..., qt..., nsteps = 20,
+ra = SD.gpu_run_llg(prob, c0, gH; kw..., qt..., nsteps = 40)
+SD.gpu_run_llg(prob, c0, gH; kw..., qt..., nsteps = 20,
                checkpoint = ckpath, checkpoint_interval = 20)
 rb = MC.resume(ckpath, prob, gH; nsteps = 40)
 ra.config == rb.config || error("quantum device resume NOT bitwise")
@@ -88,10 +88,10 @@ flush(stdout)
 
 # --- 4. timing -----------------------------------------------------------------------
 nsteps_t = 50
-SD.run_llg_gpu(prob, c0, gH; kw..., nsteps = 5)          # warmup/compile
-SD.run_llg_gpu(prob, c0, gH; kw..., qt..., nsteps = 5)
-t_c = @elapsed SD.run_llg_gpu(prob, c0, gH; kw..., nsteps = nsteps_t)
-t_q = @elapsed SD.run_llg_gpu(prob, c0, gH; kw..., qt..., nsteps = nsteps_t)
+SD.gpu_run_llg(prob, c0, gH; kw..., nsteps = 5)          # warmup/compile
+SD.gpu_run_llg(prob, c0, gH; kw..., qt..., nsteps = 5)
+t_c = @elapsed SD.gpu_run_llg(prob, c0, gH; kw..., nsteps = nsteps_t)
+t_q = @elapsed SD.gpu_run_llg(prob, c0, gH; kw..., qt..., nsteps = nsteps_t)
 @printf("GPU step: classical %.1f ms  quantum %.1f ms  overhead %+.1f%%\n",
         1e3 * t_c / nsteps_t, 1e3 * t_q / nsteps_t, 100 * (t_q / t_c - 1))
 

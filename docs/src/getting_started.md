@@ -61,7 +61,7 @@ res = run_llg(prob, config0; dt = 0.5, nsteps = 600,            # dt in fs
 ## Inspecting the result
 
 [`LLGResult`](@ref) carries the built-in time series (`times` [fs], `energies` —
-SCE + Zeeman — and the mean spin direction over active sites), one series matrix per
+SLCE + Zeeman — and the mean spin direction over active sites), one series matrix per
 requested observable, and the final configuration. The damping strictly dissipates:
 the energy falls monotonically toward the aligned state, and the mean-spin length
 grows toward 1:

@@ -86,7 +86,7 @@ resume(::AbstractString, ::LLGProblem)
 ## GPU
 
 ```@docs
-run_llg_gpu
+gpu_run_llg
 resume(::AbstractString, ::LLGProblem, ::Any)
 ```
 
