@@ -16,8 +16,10 @@ Fields:
   `times`,
 - `config` — the final configuration, plus the run parameters. For a
   thermostatted run, `kT` [eV] and the `seed` are recorded (`kT = NaN`,
-  `seed = 0` for a deterministic run); `n_active` is the active-site count
-  (what per-site [`equilibrium_stats`](@ref) evaluables normalize by);
+  `seed = 0` for a deterministic run); `n_active` is the active-site count and
+  `n_spin_active` the magnetic-site count — an `Evaluable`'s `scope` picks which
+  one it is normalized by in [`equilibrium_stats`](@ref), and the two differ
+  exactly when a joint spin–lattice Hamiltonian carries displacement-only sites;
   `compute` is the provenance tag (`"cpu"`, or `"gpu:<backend>"` from
   `run_llg_gpu` — GPU trajectories are bit-reproducible only for a fixed
   backend and workgroup size); `thermostat` is `"classical"` (white noise —
@@ -37,6 +39,7 @@ struct LLGResult
     kT::Float64
     seed::UInt64
     n_active::Int
+    n_spin_active::Int
     compute::String
     thermostat::String
 end
@@ -274,7 +277,7 @@ function _llg_loop!(spec::_RunSpec, config::SpinConfig, tr::_Trace, step0::Int,
     end
     _ck_llg!(ck, spec, config, tr, ns, true, fstate)   # the completion write
     return LLGResult(tr.times, tr.energies, tr.means, tr.series, config, ns,
-                     spec.dt, mi, spec.kt, spec.seed, H.n_active,
+                     spec.dt, mi, spec.kt, spec.seed, H.n_active, H.n_spin_active,
                      _compute_string(spec), _thermostat_string(spec.thermostat))
 end
 

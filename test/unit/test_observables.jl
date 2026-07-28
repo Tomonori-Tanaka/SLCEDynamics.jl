@@ -43,6 +43,30 @@
               r.series[:esce][1, end] - 2.0 * SD.MU_B_EV_T * bz * mz atol = 1e-14
     end
 
+    @testset "an Evaluable's scope picks the site count it is normalized by" begin
+        # `stats.jl` used to pass `n_active` to every evaluable regardless of scope.
+        # Invisible on any Hamiltonian this package can currently run — a site is
+        # active-but-not-spin-active only if it carries displacement content, and a
+        # joint `TiledHamiltonian` dies at the first measurement (see CLAUDE.md's
+        # parked gap) — so the counts always coincide today. The gate constructs the
+        # divergent result directly rather than pretending otherwise: the moment
+        # spin–lattice dynamics lands, `χ` and Binder normalized by the total active
+        # count are wrong by the ratio of the two, silently.
+        nm = 200
+        series = Dict(:x => reshape(collect(1.0:nm), 1, nm))
+        res = SD.LLGResult(collect(1.0:nm), zeros(nm),
+                           fill(SVector{3,Float64}(0, 0, 1), nm), series,
+                           config0, nm, 0.01, 1, 0.05, UInt64(7),
+                           10, 4,                       # n_active, n_spin_active
+                           "cpu", "classical")
+        @test res.n_active != res.n_spin_active         # teeth: the two must differ
+        evs = [Evaluable(:n_spin, [:x], (m, kT, n) -> float(n)),
+               Evaluable(:n_energy, [:x], (m, kT, n) -> float(n); scope = :energy)]
+        st = equilibrium_stats(res; evaluables = evs, discard = 0, nbins = 4)
+        @test st[:n_spin].mean[1] == 4.0
+        @test st[:n_energy].mean[1] == 10.0
+    end
+
     @testset "validation" begin
         dup = [Observable(:x, 1, v -> v.energy),
                Observable(:x, 1, v -> v.energy)]

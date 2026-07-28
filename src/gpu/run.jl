@@ -167,7 +167,7 @@ function _llg_loop_gpu!(spec::_RunSpec, st::GPULLGState, gH, tr::_Trace,
     _ck_llg!(ck, spec, st.h_config, tr, ns, true, fstate)
     return LLGResult(tr.times, tr.energies, tr.means, tr.series,
                      copy(st.h_config), ns, spec.dt, mi, spec.kt, spec.seed,
-                     prob.H.n_active, _compute_string(spec),
+                     prob.H.n_active, prob.H.n_spin_active, _compute_string(spec),
                      _thermostat_string(spec.thermostat))
 end
 

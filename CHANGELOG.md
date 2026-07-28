@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`equilibrium_stats` ignored an `Evaluable`'s `scope`**, passing `n_active` to
+  every one of them. Upstream, `scope` exists precisely because a per-site
+  quantity is only intensive when divided by the sites that carry it: `:spin`
+  (χ, Binder) wants `n_spin_active`, `:energy` (specific heat) wants `n_active`.
+  `LLGResult` now carries both counts and the bridge picks between them, as the
+  MC side does.
+
+  Not currently reachable, and said plainly rather than dressed up: the two
+  counts differ only when displacement-only sites exist, and a joint
+  `TiledHamiltonian` dies at the first measurement (the parked gap in
+  `CLAUDE.md`). What this removes is a trap laid for whatever lands spin–lattice
+  dynamics here — a magnetization normalized by the total active count is wrong
+  by the ratio of the two, with nothing to announce it. Gated in
+  `test_observables.jl` on a directly-constructed `LLGResult` whose counts
+  diverge, since no run can produce one.
+
 ### Added
 
 - `test_sqw_core.jl` "series layout is xyz-fastest-then-site": states the recorded

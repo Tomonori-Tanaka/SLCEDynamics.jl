@@ -100,7 +100,13 @@ function equilibrium_stats(res::LLGResult;
             continue
         end
         keys_tuple = Tuple(ev.inputs)
-        f = (ms...) -> ev.f(NamedTuple{keys_tuple}(ms), res.kT, res.n_active)
+        # Honour the evaluable's `scope`, as the MC side does: a magnetization
+        # quantity is only intensive when divided by the sites that CARRY a moment.
+        # This used to pass `n_active` unconditionally — invisible on a pure-spin
+        # model, where the two counts coincide, and wrong by their ratio on a joint
+        # Hamiltonian with displacement-only sites.
+        n = ev.scope === :energy ? res.n_active : res.n_spin_active
+        f = (ms...) -> ev.f(NamedTuple{keys_tuple}(ms), res.kT, n)
         est, err = jackknife(f, cols)
         stats[ev.name] = ObservableStat(ev.name, [est], [err], [NaN], nb)
     end

@@ -114,10 +114,17 @@ equation, unit system, and the settled stochastic-LLG design.
 - **`equilibrium_stats` ↔ SLCEMonteCarlo's `_finalize_stats`**: `stats.jl`
   deliberately parallels the MC finalization (bin size
   `max(1, fld(kept, nbins))`, jackknife over `bin_means`, the
-  `f(means, kT, n_active)` NamedTuple call, the `< 2` bins → NaN path) on the
+  `f(means, kT, n)` NamedTuple call, the `< 2` bins → NaN path) on the
   upstream **public** tier — if SLCEMonteCarlo changes its binning/jackknife
   conventions or `ObservableStat`, this bridge follows (gate: the cross-package
-  equilibrium test compares stats produced by both pipelines).
+  equilibrium test compares stats produced by both pipelines). That includes
+  `Evaluable`'s **`scope`**: `:spin` normalizes by `n_spin_active`, `:energy` by
+  `n_active`, and `LLGResult` carries both counts so the bridge can honour it.
+  It passed `n_active` unconditionally until 2026-07-28 — which is unreachable
+  today (the two counts differ only when displacement-only sites exist, and a
+  joint Hamiltonian dies at the first measurement — see the parked gap below)
+  but was a trap laid for whatever lands spin–lattice dynamics here. Gate:
+  `test_observables.jl`, on a directly-constructed divergent `LLGResult`.
 - **S(q,ω) phase table ↔ upstream site ordering** (`sqw.jl` `_fill_phases!` /
   `channel_sumrule` ↔ SLCEMonteCarlo `site_index`/`site_atom`/
   `supercell_crystal`): the kernel assumes atom-fastest column-major cell order
