@@ -179,6 +179,16 @@ equation, unit system, and the settled stochastic-LLG design.
   constructor discards the argument on a pure-spin `H` anyway, so the enforcement
   lives entirely upstream (gated in SLCEMonteCarlo's `test_joint.jl`). Keep passing
   it regardless — it states the intent at the call site.
+  **2026-07-29 (upstream M5-4)**: `MCView` gained an optional 5th field, the cell
+  scale `strain` (`nothing` on a fixed cell; `SLCEMonteCarlo.strain(v)` throws
+  then). This package's 4-arg construction is deliberately untouched — an LLG run
+  is a fixed-cell run, so its views correctly carry `strain === nothing`, and a
+  strain observable correctly throws here. If this package ever consumes a model
+  under strain (a magnetoelastic LLG), the view must be built with the actual
+  scale — the same explicit-decision rule as above. `ChainState` also gained a
+  `strain` field and the MC checkpoint schema moved to v4; `model_fingerprint`'s
+  mixing is UNCHANGED (pinned upstream, this package's checkpoint format depends
+  on it).
 
 ## Tests
 
