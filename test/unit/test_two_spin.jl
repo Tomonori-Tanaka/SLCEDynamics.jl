@@ -33,6 +33,14 @@
         # gate in the suite) — if it ever trips, halve dt before suspecting physics
         @test res.config[1] ≈ _analytic1(Ω, t) rtol = 1e-5
         @test res.config[2] ≈ SVector(-1.0, -1.0, 1.0) .* _analytic1(Ω, t) rtol = 1e-5
+        # ...and the halve-dt diagnosis is built in: the same endpoint at dt/2
+        # must sit ≳3× closer to the closed form (O(dt²) ⇒ ~4×), so a trip above
+        # self-separates "resolution" from "physics" without re-deriving anything
+        res2 = run_llg(prob, config0; dt = dt / 2, nsteps = 2 * nsteps,
+                       renorm_interval = 0)
+        err1 = norm(res.config[1] - _analytic1(Ω, t))
+        err2 = norm(res2.config[1] - _analytic1(Ω, t))
+        @test err2 < err1 / 3
         # invariants: total spin, angle, energy (conserved to integrator order)
         s_end = res.config[1] + res.config[2]
         @test s_end ≈ SVector(0.0, 0.0, szlen) atol = 1e-6

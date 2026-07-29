@@ -54,6 +54,11 @@ end
     end
 
     @testset "cascade ≡ state-space (algebraic twin)" begin
+        # Consistency gate, not a correctness oracle: BOTH sides come from the
+        # implementation (`_qt_cascade!` vs `_filter_state_space`), so a shared
+        # misconception would pass here. Correctness is anchored by F2 below —
+        # the impulse response against a test-local closed-form |H(z)|² — and by
+        # the Lyapunov residual on `_stationary_cov`.
         sections = _qt_test_sections()
         m = 2 * length(sections)
         A, B, h, d = SD._filter_state_space(sections)
