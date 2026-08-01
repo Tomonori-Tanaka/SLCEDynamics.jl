@@ -18,12 +18,6 @@
 # ≤ 1% spectral-warp accuracy at occupied modes wants τ ≲ 0.05 — enforced as a
 # recommendation in the error text, not a bound).
 const _QT_MAX_TAU = 0.1
-# Lower bound: below this the bilinear poles collapse onto z = 1 and the
-# coefficient conditioning degrades (the Jury margin goes negative near
-# τ ~ 1e-6); at such τ every physical mode is frozen anyway (ħω ≫ kT for
-# every resolvable ω). The guard turns an opaque stability error into a
-# clear message.
-const _QT_MIN_TAU = 1e-4
 const _QT_MAX_NSECTIONS = 8
 
 # Provenance tag of the shipped filter constants, stored in quantum checkpoints
@@ -53,6 +47,38 @@ const _QT_S_BIQUADS = (
     (0.16930356089122989, 2.5987551550330009e-05, 30.517515785768918,
      9.2962139193574611, 30.517515785768918),
 )
+
+# Lower τ bound, DERIVED from the sections above rather than pinned, so a re-fit
+# of `_QT_S_BIQUADS` moves it instead of silently invalidating it.
+#
+# What actually degrades first is the DISCRETE DC GAIN, not the Jury margin. Each
+# section is DC-normalized (β₀ ≡ α₀), so the bilinear map's per-section DC gain is
+# `(b₀+b₁+b₂)/(1+a₁+a₂) = 4β₀/4α₀ = 1` exactly — but both sums are O(1)
+# cancellations landing on `~α₀τ²`, so the relative error of that 1.0 is
+# `eps/(α₀τ²)`. Measured against the closed form: predicted 1.035e-4 vs observed
+# 1.029e-4 at τ = 1e-4, 2.59e-5 vs 2.60e-5 at 2e-4, 4.14e-6 vs 4.17e-6 at 5e-4.
+# Inverting it gives the bound below. It depends only on `eps` and the smallest
+# `α₀`; kT and dt enter only through τ.
+#
+# The Jury margin is a SEPARATE and much later failure: `1 + a₁ + a₂ → α₀·τ²`
+# stops being resolvable at `α₀τ² ~ eps`, i.e. `τ ≈ 1.02e-6` — verified, a
+# section is genuinely rejected as unstable there. The two are two decades apart
+# and this constant is the DC one; the old comment named the Jury bound while the
+# value implemented the DC one, which is why the rationale read as three decades
+# off. (It also has nothing to do with the stationary-covariance conditioning —
+# see `_stationary_factor`, which is solved in extended precision and is accurate
+# across the whole accepted range.)
+const _QT_DC_TOL = 1.0e-4        # tolerated relative degradation of H_d(1) = 1
+const _QT_MIN_TAU = sqrt(eps(Float64) / (minimum(s[5] for s in _QT_S_BIQUADS) *
+                                         _QT_DC_TOL))
+
+# Working precision of the stationary-covariance solve. See `_stationary_factor`:
+# the Float64 solve is not merely imprecise there, it returns a matrix that is not
+# positive semi-definite, and the resulting thermal-noise power is wrong by up to
+# +325 %. Measured requirement — 53 bits FAILS (the matrix is genuinely indefinite
+# at that precision), 80 bits reaches 1e-8, 113 bits reaches 1e-16; 128 is that
+# with 2.4× headroom.
+const _QT_LYAP_PRECISION = 128
 
 """
     ClassicalThermostat()
@@ -150,59 +176,108 @@ Base.show(io::IO, f::ColoredNoiseFilter) =
 #   y   = b0·u + s1
 #   s1⁺ = (b1 − a1·b0)·u − a1·s1 + s2
 #   s2⁺ = (b2 − a2·b0)·u − a2·s1
-function _filter_state_space(sections::Vector{_Biquad})
+#
+# Parametric in the working precision, with `Float64` the default so every
+# existing caller is bit-identical: `_stationary_factor` needs the SAME assembly
+# in extended precision, and a second copy of this loop is exactly the drift
+# hazard the coupled-site note above exists to prevent.
+function _filter_state_space(sections::Vector{_Biquad},
+                             ::Type{T} = Float64) where {T<:AbstractFloat}
     m = 2 * length(sections)
-    A = zeros(m, m)
-    B = zeros(m)
-    crow = zeros(m)                      # state row of the current input u_j
-    d = 1.0                              # ξ coefficient of the current input
+    A = zeros(T, m, m)
+    B = zeros(T, m)
+    crow = zeros(T, m)                   # state row of the current input u_j
+    d = one(T)                           # ξ coefficient of the current input
     for (j, biquad) in enumerate(sections)
         p1 = 2 * j - 1
         p2 = 2 * j
-        g1 = biquad.b1 - biquad.a1 * biquad.b0
-        g2 = biquad.b2 - biquad.a2 * biquad.b0
+        b0, b1, b2 = T(biquad.b0), T(biquad.b1), T(biquad.b2)
+        a1, a2 = T(biquad.a1), T(biquad.a2)
+        g1 = b1 - a1 * b0
+        g2 = b2 - a2 * b0
         for k = 1:m
             A[p1, k] = g1 * crow[k]
             A[p2, k] = g2 * crow[k]
         end
-        A[p1, p1] += -biquad.a1
-        A[p1, p2] += 1.0
-        A[p2, p1] += -biquad.a2
+        A[p1, p1] += -a1
+        A[p1, p2] += one(T)
+        A[p2, p1] += -a2
         B[p1] = g1 * d
         B[p2] = g2 * d
         for k = 1:m                      # u_{j+1} = y_j = b0·u_j + s1_j
-            crow[k] *= biquad.b0
+            crow[k] *= b0
         end
-        crow[p1] += 1.0
-        d *= biquad.b0
+        crow[p1] += one(T)
+        d *= b0
     end
     return A, B, crow, d
 end
 
 # Stationary covariance of `s⁺ = A s + B ξ`: the discrete Lyapunov equation
-# P = A P Aᵀ + B Bᵀ by direct vec-solve (m ≤ 16 — exact and deterministic).
-function _stationary_cov(A::Matrix{Float64}, B::Vector{Float64})::Matrix{Float64}
+# P = A P Aᵀ + B Bᵀ by direct vec-solve (m ≤ 16). Parametric in the working
+# precision — see `_stationary_factor` for why it must not be called at Float64.
+function _stationary_cov(A::Matrix{T}, B::Vector{T})::Matrix{T} where {T<:AbstractFloat}
     m = length(B)
     P = reshape((I - kron(A, A)) \ vec(B * B'), m, m)
     return (P + P') / 2
 end
 
-# A square root L with L·Lᵀ = P via the clamped symmetric eigendecomposition —
-# NOT a plain Cholesky, which throws on the ULP-negative eigenvalues of
-# near-singular P (small τ) and on the exactly zero P of a pure-feedthrough
-# filter (the identity placeholder). Eigenvector signs are canonicalized
-# (largest-|component| entry made positive) so L is a deterministic function
-# of P — LAPACK's sign choice is not otherwise pinned, and L feeds the
-# Philox-keyed stationary init (bit-reproducibility surface).
-function _stationary_sqrt(P::Matrix{Float64})::Matrix{Float64}
-    e = eigen(Symmetric(P))
-    V = e.vectors
-    for k = 1:size(V, 2)
-        col = @view V[:, k]
-        i = argmax(abs.(col))
-        col[i] < 0 && (col .*= -1)
+# The stationary square root `L` (`L·Lᵀ = P`) of the cascade's state covariance,
+# solved in EXTENDED PRECISION and returned as a Cholesky factor.
+#
+# WHY NOT Float64. The equation and this assembly are correct — solved at 512
+# bits the covariance is strictly positive definite at every accepted τ. But the
+# vec-system `(I − A⊗A)` is numerically singular there: `cond` reaches 2–5e16,
+# past `1/eps`. Two factors multiply into it, and neither is fixable by scaling.
+# The bilinear map collapses the poles onto `z = 1` as `1 − ρ(A) = 7.32e-3·τ`
+# (measured, exactly proportional), worth ~7e5; the rest is the NON-NORMALITY of
+# the DF2T realization, `κ(V) ≈ 454/τ`, which the Kronecker product SQUARES to
+# ~3e13. LAPACK balancing was measured and moved `cond` by nothing — a diagonal
+# similarity cannot remove non-normality.
+#
+# What that cost was not a rounding detail. The returned Float64 `P` satisfied
+# the Lyapunov equation to 1e-16 while NOT being positive semi-definite, and the
+# resulting thermal-noise power `h·P·hᵀ + d²` was wrong by more than 1 % over
+# 18.7 % of the accepted range, worst case **+325 %** at τ = 1.70e-4. Confirmed
+# end to end on a 216-site run: +127 % = +22.9σ against an independent oracle.
+# The error decays as `A^k E A^kᵀ`, half-life ~1e5–5e5 steps, i.e. hundreds of ps
+# — far longer than the spin relaxation the bath is supposed to set.
+#
+# Nothing caught it because the F4 gate compared a stream started from `x = L·ζ`
+# against `dot(h, P*h) + d²`: both sides share the same wrong `P`, so it passed
+# self-consistently. A reference sharing the core routine is not an oracle
+# (`~/Packages/CLAUDE.md`, Testing). The gate that does catch it is the
+# Wiener–Khinchin contour integral, built from the stored coefficients alone.
+#
+# WHY A CHOLESKY FACTOR rather than a clamped eigendecomposition. Solving for a
+# factor makes `L·Lᵀ ⪰ 0` STRUCTURAL — there is no negative eigenvalue to clamp,
+# so the old `max(·, 0.0)` (whose comment claimed ULP-sized negatives, while the
+# real ones reached 5 % of the largest) has nothing to hide. It is also unique
+# given positive diagonals, which retires the eigenvector-sign canonicalization
+# the previous form needed: LAPACK does not pin its sign choice, and `L` feeds
+# the Philox-keyed init, i.e. it sits upstream of every bitwise gate in the
+# family. Generic `\`/`cholesky` at BigFloat go through MPFR, which is correctly
+# rounded and therefore platform-independent — a shallower dependency than the
+# LAPACK path it replaces.
+#
+# `setprecision` is dynamic-scope global state, which the shared CLAUDE.md warns
+# against; the `do` form closes it lexically, and `_QT_LYAP_PRECISION` is a named
+# constant rather than a literal so the pinned `L` moves visibly if it changes.
+# `precision` is a keyword ONLY so a gate can show the shipped choice has
+# headroom (a lower precision must round to the same Float64); production always
+# takes the default.
+function _stationary_factor(sections::Vector{_Biquad};
+                            precision::Int = _QT_LYAP_PRECISION)::Matrix{Float64}
+    return setprecision(BigFloat, precision) do
+        A, B, _, _ = _filter_state_space(sections, BigFloat)
+        P = _stationary_cov(A, B)
+        # The identity placeholder (a pure-feedthrough filter) has P ≡ 0, which is
+        # PSD but not positive definite, so `cholesky` would throw. Zero is the
+        # correct factor and this is the only exactly-singular case the cascade
+        # can produce (every fitted section has strictly LHP poles).
+        all(iszero, P) && return zeros(Float64, size(P))
+        return Float64.(Matrix(cholesky(Symmetric(P)).L))
     end
-    return V * Diagonal(sqrt.(max.(e.values, 0.0)))
 end
 
 # The discrete filter for one run: the pinned s-domain sections mapped by the
@@ -223,8 +298,7 @@ function _build_quantum_filter(kt::Float64, dt::Float64)::ColoredNoiseFilter
                               2 * (α0 - K) / D,
                               (K - α1 * c + α0) / D)
     end
-    A, B, _, _ = _filter_state_space(sections)
-    return ColoredNoiseFilter(sections, _stationary_sqrt(_stationary_cov(A, B)))
+    return ColoredNoiseFilter(sections, _stationary_factor(sections))
 end
 
 # Per-run colored-noise state: the filter and the running DF2T state, one
@@ -303,8 +377,14 @@ function _resolve_quantum_fstate(thermostat::AbstractThermostat, thermo::Bool,
         "fs recommended)"))
     tau >= _QT_MIN_TAU || throw(ArgumentError(
         "kT·dt/ħ = $(round(tau; sigdigits = 3)) is below the quantum " *
-        "thermostat's conditioning bound $(_QT_MIN_TAU) — at such τ every " *
-        "physical mode is frozen (ħω ≫ kT); increase dt or use larger kT"))
+        "thermostat's coefficient-conditioning bound " *
+        "$(round(_QT_MIN_TAU; sigdigits = 3)) — the discrete sections' DC gain, " *
+        "exactly 1 in closed form, is a cancellation of order α₀τ², so below " *
+        "this it loses more than $(_QT_DC_TOL) in relative terms. Raise kT, or " *
+        "raise dt if the integrator allows it. NOTE the physics is fine here: a " *
+        "small τ means a FINE dt, so the Nyquist band (x ≤ π/τ) resolves more of " *
+        "θ(x), not less — this is a coefficient-arithmetic limit, not a " *
+        "frozen-mode one"))
     return _init_filter_state(_build_quantum_filter(kt, dtf), H, seed_u)
 end
 

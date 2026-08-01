@@ -74,7 +74,19 @@ equation, unit system, and the settled stochastic-LLG design.
   draws (byte-compat of classical mode is pinned by literal Philox words in
   `test_quantum_thermostat.jl`) and claim step 0, slots ≥ 2 for the
   stationary init; `_filter_state_space` is the algebraic twin of the DF2T
-  recurrence (the Lyapunov init and the equivalence test derive from it).
+  recurrence (the Lyapunov init and the equivalence test derive from it), and it
+  is parametric in the working precision because `_stationary_factor` needs the
+  SAME assembly at 128 bits — never write a second copy of that loop.
+  **The stationary init must be solved in extended precision and returned as a
+  factor**: at Float64 the Lyapunov solution is not positive semi-definite
+  (`cond(I − A⊗A)` 2–5e16, from `1 − ρ(A) = 7.32e-3·τ` times a SQUARED DF2T
+  non-normality — balancing does nothing) and the thermal-noise power was wrong by
+  up to +325 %, measured +22.9σ end to end. Its gate must be an oracle the
+  implementation cannot reach — the contour integral over the stored coefficients
+  (Q-F6) — because the natural-looking check, comparing a stream started from
+  `x = L·ζ` against `dot(h, P*h) + d²`, has the same `L` on both sides and passes
+  while `L` is wrong. A PSD scan alone is not enough either: at the worst τ the
+  eigenvalue ratio read −1.3e-14 and looked healthy.
   Change the recurrence, the lane layout `(c−1)·2NS + 2(j−1) + r`, or the
   slot map and the twin, the tests, and the decision record move together —
   plus the checkpoint `state/filter` layout (schema v3, verbatim restore

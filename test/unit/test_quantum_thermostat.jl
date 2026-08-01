@@ -14,9 +14,7 @@ _qt_test_sections() = [SD._Biquad(0.8, 0.3, -0.1, -0.5, 0.06),
 
 function _qt_test_filter()
     sections = _qt_test_sections()
-    A, B, _, _ = SD._filter_state_space(sections)
-    return SD.ColoredNoiseFilter(sections,
-                                 SD._stationary_sqrt(SD._stationary_cov(A, B)))
+    return SD.ColoredNoiseFilter(sections, SD._stationary_factor(sections))
 end
 
 @testset "quantum thermostat" begin
@@ -78,17 +76,23 @@ end
     @testset "Lyapunov stationary covariance and square root" begin
         sections = _qt_test_sections()
         A, B, h, d = SD._filter_state_space(sections)
-        P = SD._stationary_cov(A, B)
+        L = SD._stationary_factor(sections)
+        P = L * L'
+        # `L` is a Cholesky factor of the extended-precision solution, so this
+        # asserts that the ROUNDED factor still satisfies the equation the
+        # extended-precision solve was given.
         @test norm(P - (A * P * A' + B * B')) <= 1e-12 * max(1.0, norm(P))
-        L = SD._stationary_sqrt(P)
-        @test norm(L * L' - P) <= 1e-12 * max(1.0, norm(P))
-        # the identity (pure-feedthrough) filter has P = 0 exactly — the
-        # clamped square root must not throw (plain cholesky would)
+        # PSD is now structural (a real factor cannot produce a negative
+        # eigenvalue), which is the property the old clamped eigendecomposition
+        # could only approximate — see Q-F7 for the scan across τ.
+        @test minimum(eigvals(Symmetric(P))) >= 0.0
+        # the identity (pure-feedthrough) filter has P = 0 exactly — the factor
+        # path must return zeros rather than let `cholesky` throw on it
         Ai, Bi, _, _ = SD._filter_state_space([SD._Biquad(1.0, 0.0, 0.0, 0.0,
                                                           0.0)])
-        Pi = SD._stationary_cov(Ai, Bi)
-        @test Pi == zeros(2, 2)
-        @test SD._stationary_sqrt(Pi) == zeros(2, 2)
+        @test SD._stationary_cov(Ai, Bi) == zeros(2, 2)
+        @test SD._stationary_factor([SD._Biquad(1.0, 0.0, 0.0, 0.0, 0.0)]) ==
+              zeros(2, 2)
         # seeded stream check: lag-0 variance of the stationary cascade output
         # equals h·P·hᵀ + d² (the closed form) within 4σ
         noise_filter = _qt_test_filter()
@@ -283,14 +287,125 @@ end
         end
     end
 
+    # Q-F6 — the stationary law against an oracle the implementation cannot
+    # reach. `Var(y)` of a stable LTI filter driven by unit white noise is
+    # `(1/2π)∮|H_d(z)|² dθ`, which this computes from the STORED biquad
+    # coefficients alone: no state space, no Lyapunov solve, no `L`. That
+    # independence is the point. The predecessor gate (F4 below) compared a
+    # stream started from `x = L·ζ` against `dot(h, P*h) + d²` with both sides
+    # reading the same `L`, so it passed self-consistently while the shipped
+    # thermal-noise power was wrong by up to +325 % — a reference sharing the
+    # core routine is not an oracle (`~/Packages/CLAUDE.md`, Testing).
+    #
+    # An EMPIRICAL oracle is impossible here, which is why this one is analytic:
+    # the filter's memory is `1/(1−ρ²) ~ 1e6` steps, so measuring the stationary
+    # variance by burn-in would need ~1e7 steps for ~10 independent samples,
+    # i.e. σ ≈ 45 %.
+    #
+    # The τ grid is FIXED and stratified across the accepted range, chosen before
+    # measuring so that no point is selected for passing. The tolerance is set by
+    # the ORACLE's own resolution (see the self-check), not by the
+    # implementation's error, which is ~1e-16. Mutation resolved (verified by
+    # actually making it): assembling and solving at Float64 turns all three
+    # Q-gates red at the first τ. It does so by REFUSING — the Float64 matrix is
+    # genuinely indefinite, so a factor-based solve cannot proceed — whereas the
+    # predecessor, which formed `P` and took a clamped eigendecomposition, sailed
+    # past that and returned a variance wrong by 1.5e-2 to 2.2e-2 relative here.
+    # Both are caught; only one of them was ever loud.
+    @testset "Q-F6: stationary variance vs the contour-integral oracle" begin
+        function var_contour(sections, npts)
+            acc = 0.0
+            for k = 0:(npts - 1)
+                z = cis(2π * k / npts)
+                H = 1.0 + 0im
+                for s in sections
+                    H *= (s.b0 + s.b1 / z + s.b2 / z^2) /
+                         (1 + s.a1 / z + s.a2 / z^2)
+                end
+                acc += abs2(H)
+            end
+            return acc / npts
+        end
+        for tau in (SD._QT_MIN_TAU, 3e-4, 1e-3, 3e-3, 1e-2, 1e-1)
+            noise_filter = SD._build_quantum_filter(tau * SD.HBAR_EV_FS, 1.0)
+            _, _, h, d = SD._filter_state_space(noise_filter.sections)
+            got = dot(h, (noise_filter.L * noise_filter.L') * h) + d^2
+            coarse = var_contour(noise_filter.sections, 2^21)
+            fine = var_contour(noise_filter.sections, 2^23)
+            # The quadrature proves its OWN resolution, because a grid too coarse
+            # for the smallest τ would silently under-resolve the peak rather
+            # than fail: the poles sit at `1 − ρ = 7.3e-3·τ`, i.e. a width of
+            # 7.4e-7 in θ at the bound, against a 2^23 spacing of 7.5e-7. Both
+            # bounds below are the ORACLE's convergence with headroom, measured
+            # against a 2^25 reference — `|coarse/fine − 1|` reaches 2.0e-5 and
+            # `|got/fine − 1|` reaches 2e-7, both at the smallest τ and both
+            # falling by orders as τ grows. The implementation's own error is
+            # ~1e-16 and is nowhere near either bound.
+            @test abs(coarse / fine - 1) < 1e-4
+            @test abs(got / fine - 1) < 1e-6
+        end
+    end
+
+    # Q-F7 — PSD-ness is a mathematical property of the stationary covariance of
+    # a stable filter, so the expected answer is "no negative eigenvalue" at
+    # every τ, from theory rather than from a run. It is cheap and scans densely,
+    # but it is NOT sufficient on its own and must not be read as such: at the
+    # worst point of the old defect (τ = 1.70e-4, variance wrong by +325 %) the
+    # eigenvalue ratio was −1.3e-14 and looked healthy. Q-F6 is the primary gate.
+    @testset "Q-F7: the stationary covariance is PSD across the accepted range" begin
+        for tau in exp10.(range(log10(SD._QT_MIN_TAU), log10(SD._QT_MAX_TAU);
+                                length = 60))
+            L = SD._build_quantum_filter(tau * SD.HBAR_EV_FS, 1.0).L
+            ev = eigvals(Symmetric(L * L'))
+            @test minimum(ev) >= 0.0          # structural: L is a real factor
+            @test maximum(ev) > 0.0
+        end
+    end
+
+    # Q-F8 — the shipped working precision is CONVERGED, not merely pinned:
+    # raising it further changes the shipped Float64 by no more than its own last
+    # bit. That is a statement about the computation, so it needs no captured
+    # output and no recapture date — unlike a byte pin, it stays true when the
+    # biquads are re-fitted.
+    #
+    # The bound is a few ulp rather than exact equality, and that is not slack:
+    # rounding a p-bit result to Float64 is a double rounding, so whenever the
+    # exact value sits near a Float64 boundary the last bit can flip with p at
+    # ANY precision. Demanding bit equality here would be demanding that no
+    # entry ever lands near a boundary, which is a property of the numbers, not
+    # of the convergence being tested.
+    #
+    # The other direction (that the precision is NEEDED) is not asserted here but
+    # in Q-F6, whose mutation note records what the Float64 solve actually
+    # produces: a variance wrong by 1.5e-2 to 2.2e-2 relative at these very τ.
+    # Asserting "low precision throws" would be fragile — BigFloat at a Float64
+    # mantissa is not Float64 arithmetic, and whether the Cholesky happens to
+    # fail is not the property worth gating.
+    @testset "Q-F8: the Lyapunov precision is converged, not just pinned" begin
+        for tau in (SD._QT_MIN_TAU, 1e-3, 1e-1)
+            sections = SD._build_quantum_filter(tau * SD.HBAR_EV_FS, 1.0).sections
+            shipped = SD._stationary_factor(sections)
+            scale = maximum(abs, shipped)
+            for higher in (192, 256)
+                @test maximum(abs, SD._stationary_factor(sections;
+                                                         precision = higher) .-
+                                   shipped) <= 8 * eps(Float64) * scale
+            end
+        end
+    end
+
     @testset "F3/F4: shipped-filter stationary law" begin
         kt = 0.01
         dtf = 1.0                                 # τ ≈ 0.0152 (the G1 setting)
         noise_filter = SD._build_quantum_filter(kt, dtf)
         A, B, h, d = SD._filter_state_space(noise_filter.sections)
-        P = SD._stationary_cov(A, B)
+        P = noise_filter.L * noise_filter.L'
         @test norm(P - (A * P * A' + B * B')) <= 1e-10 * max(1.0, norm(P))
-        @test norm(noise_filter.L * noise_filter.L' - P) <= 1e-10 * max(1.0, norm(P))
+        # F4 is a CONSISTENCY CHECK, not an oracle, and that distinction is the
+        # whole reason the +325 % covariance defect survived: both sides below
+        # read the same `L`, so they agree even when `L` is wrong. It stays
+        # because it fences the stream against the closed form; correctness of
+        # the closed form itself is Q-F6's job.
         # F4: seeded stream variance vs the closed form h·P·hᵀ + d²
         rng = MersenneTwister(11)
         x = noise_filter.L * randn(rng, length(B))

@@ -75,8 +75,13 @@ stats = equilibrium_stats(res; evaluables = Evaluable[])   # raw time averages o
   Nyquist band no longer comfortably contains the support of ``\theta`` — shrink
   `dt` for hot runs (the error message names the compliant `dt`;
   ``dt \le 0.05\,\hbar/k_BT`` is recommended for ≤ 1% spectral warp at occupied
-  modes). Below ``10^{-4}`` the filter-coefficient conditioning degrades — and at
-  such ``\tau`` every physical mode is frozen anyway (``\hbar\omega \gg k_BT``).
+  modes). Below ``\approx 10^{-4}`` the discrete sections' DC gain — exactly 1 in
+  closed form — is a cancellation of order ``\alpha_0\tau^2`` and loses more than
+  ``10^{-4}`` relative, so the bound is derived from the shipped coefficients as
+  ``\tau_{\min} = \sqrt{\varepsilon/(\alpha_0^{\min}\,\mathrm{tol})}`` rather
+  than pinned. Note this is a coefficient-arithmetic limit, **not** a physical
+  one: a small ``\tau`` means a fine ``\Delta t``, so the Nyquist band
+  ``x \le \pi/\tau`` resolves *more* of ``\theta(x)``, not less.
 - **Markovian damping**: the damping stays local/Markovian (the QTB
   approximation), so detailed balance is broken; mode occupations are accurate to
   ~1% only for ``\alpha\,(\hbar\omega/k_BT) \lesssim 0.03`` — keep

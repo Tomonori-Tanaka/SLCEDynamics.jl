@@ -289,9 +289,8 @@ end
         # independent of the shipped constants
         sections = [SD._Biquad(0.8, 0.3, -0.1, -0.5, 0.06),
                     SD._Biquad(1.1, -0.2, 0.05, -0.9, 0.25)]
-        Anb, Bnb, _, _ = SD._filter_state_space(sections)
         noise_filter = SD.ColoredNoiseFilter(sections,
-            SD._stationary_sqrt(SD._stationary_cov(Anb, Bnb)))
+                                             SD._stationary_factor(sections))
         n = MC.n_sites(H)
         x = reshape(collect(1.0:(12.0 * n)), 12, n)
         fstate = SD._FilterState(noise_filter, x)

@@ -244,9 +244,8 @@ end
         # (ii)/(iii) below exercise the real shipped filter end-to-end
         sections = [SD._Biquad(0.8, 0.3, -0.1, -0.5, 0.06),
                     SD._Biquad(1.1, -0.2, 0.05, -0.9, 0.25)]
-        Aq, Bq, _, _ = SD._filter_state_space(sections)
         noise_filter = SD.ColoredNoiseFilter(sections,
-            SD._stationary_sqrt(SD._stationary_cov(Aq, Bq)))
+                                             SD._stationary_factor(sections))
         fs_host = SD._init_filter_state(noise_filter, Hd, seed)
         fs_dev = SD._init_filter_state(noise_filter, Hd, seed)
         st = SD.GPULLGState(gHd, probd, c0d, sigma, fs_dev)

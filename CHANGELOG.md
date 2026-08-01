@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the quantum thermostat's stationary initialization was wrong by up to +325 %
+
+**Breaking for seeded quantum trajectories**: `L` changes, so a `QuantumThermostat`
+run at a given seed produces a different (correct) trajectory. Classical runs are
+byte-identical — `_resolve_quantum_fstate` returns early on `ClassicalThermostat`,
+so the classical path cannot reach any of this. Existing checkpoints stay valid:
+schema v3 stores the filter *coefficients* and resume never rebuilds `L`.
+
+`_stationary_cov` solved the discrete Lyapunov equation `P = A P Aᵀ + B Bᵀ` at
+Float64 and `_stationary_sqrt` took a clamped eigendecomposition square root. The
+returned `P` satisfied the equation to 1e-16 while **not being positive
+semi-definite**, and the thermal-noise power `h·P·hᵀ + d²` was wrong by more than
+1 % over **18.7 %** of the accepted τ range — worst case **+325 %** at
+τ = 1.70e-4. Confirmed end to end on a 216-site simple-cubic run: the step-1
+thermal-field variance came out **+127 % = +22.9σ** against an independent
+oracle. The error decays as `A^k E A^kᵀ` with a half-life of 1e5–5e5 steps, i.e.
+hundreds of ps against a spin relaxation time of a few ps, so a run faithfully
+follows a bath at the wrong temperature for its whole useful length.
+
+The equation and the assembly were correct: solved at 512 bits the covariance is
+strictly positive definite at every accepted τ. The problem is conditioning —
+`cond(I − A⊗A)` reaches 2–5e16, past `1/eps`. Two factors multiply: the bilinear
+map collapses the poles onto `z = 1` as `1 − ρ(A) = 7.32e-3·τ`, and the DF2T
+realization's non-normality `κ(V) ≈ 454/τ` is **squared** by the Kronecker
+product. LAPACK balancing was measured and moves `cond` by nothing; a diagonal
+similarity cannot remove non-normality.
+
+Now `_stationary_factor` solves in **128-bit precision** and returns a **Cholesky
+factor** directly. Measured: strictly positive eigenvalues at every τ (3.6e-21 at
+the bound, matching the 512-bit reference), and the variance agrees with an
+independent contour-integral oracle to that oracle's own resolution. Solving for
+a factor makes PSD **structural** — there is no negative eigenvalue to clamp —
+and the factor is unique given positive diagonals, which retires the eigenvector
+sign-canonicalization the old form needed because LAPACK does not pin its sign
+choice. `_stationary_sqrt` is gone; `_filter_state_space` and `_stationary_cov`
+are now parametric in the working precision (Float64 default, bit-identical for
+existing callers). Cost: ~8 ms once per run.
+
+**Why nothing caught it.** The F4 gate compared a stream started from `x = L·ζ`
+against `dot(h, P*h) + d²` — both sides read the same wrong `L`, so it passed
+self-consistently. A reference sharing the core routine is not an oracle
+(`~/Packages/CLAUDE.md`, Testing). F3/F4 also ran only at τ ≈ 0.0152, where the
+error is 1.6e-15. New gates: **Q-F6** compares the variance against
+`(1/2π)∮|H_d(z)|² dθ` computed from the stored coefficients alone — no state
+space, no Lyapunov, no `L` — on a fixed stratified τ grid; **Q-F7** scans PSD-ness
+across the range (necessary but *not* sufficient: at the worst τ the old
+eigenvalue ratio was −1.3e-14 and looked healthy); **Q-F8** shows the precision is
+converged rather than pinned. An empirical oracle is impossible here — the
+filter's memory is ~1e6 steps, so a burn-in measurement would give σ ≈ 45 %.
+
+### Changed — the τ lower bound is derived, and its rejection message was backwards
+
+`_QT_MIN_TAU` is now `√(eps/(α₀_min · _QT_DC_TOL))` from the shipped sections
+(1.0175e-4, i.e. the old hardcoded 1e-4), so a re-fit of `_QT_S_BIQUADS` moves it
+instead of silently invalidating it. The *value* was fine; the *rationale* named
+the Jury margin, which is a different and much later failure (τ ≈ 1.02e-6,
+verified — a section is genuinely rejected as unstable there). What actually
+degrades first is the discrete DC gain, a cancellation of order `α₀τ²`, and the
+prediction `eps/(α₀τ²)` matches measurement to three digits.
+
+The rejection message claimed "at such τ every physical mode is frozen (ħω ≫ kT);
+increase dt". That is backwards: a small τ means a **fine** dt, so the Nyquist
+band `x ≤ π/τ` resolves *more* of θ(x), and "increase dt" degrades the
+integrator. It now says this is a coefficient-arithmetic limit, not a physical
+one.
+
 ### Changed — internal names spelled out (no public surface touched)
 
 The `STYLE_GUIDE.md` §1 naming contract's safe tier, applied: internal locals and

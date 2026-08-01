@@ -24,7 +24,7 @@ module SLCEDynamics
 using JLD2: jldopen
 using KernelAbstractions: KernelAbstractions, @kernel, @index, @Const
 using LinearAlgebra: norm, normalize, dot, cross
-using LinearAlgebra: I, kron, eigen, Symmetric, Diagonal
+using LinearAlgebra: I, kron, cholesky, Symmetric
 using StaticArrays
 using Statistics: mean
 using SLCE: Crystal, n_atoms

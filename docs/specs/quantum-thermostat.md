@@ -68,10 +68,26 @@ bound Pd(0) at 1e-6, never 1e-12 (the exact claims are the script's).
   `(c − 1)·2NS + 2(j − 1) + r`). Inactive-site columns never drawn, never
   touched — exact 0.0 (the D12 discipline extended to state).
 - Stationary init: per component, the 2NS-state discrete Lyapunov equation
-  solved by direct vec-solve, clamped symmetric eigendecomposition square root
-  (never plain Cholesky — P = 0 exactly for the identity placeholder,
-  ULP-negative eigenvalues at small τ), sign-canonicalized so `L` is a
-  deterministic function of P; `x₀ = L·ζ` with ζ Philox-keyed at step 0.
+  solved by direct vec-solve **in extended precision (128 bits)**, returning a
+  **Cholesky factor** `L` directly; `x₀ = L·ζ` with ζ Philox-keyed at step 0.
+  **Corrected 2026-08-01.** This previously read "clamped symmetric
+  eigendecomposition square root … ULP-negative eigenvalues at small τ", which
+  was wrong twice over. The negatives were not ULP-sized — they reached 5 % of
+  the largest eigenvalue — and the clamp did not merely tidy them: the resulting
+  thermal-noise power was wrong by more than 1 % over 18.7 % of the accepted τ
+  range, worst case **+325 %** at τ = 1.70e-4, confirmed end to end at +22.9σ on
+  a 216-site run. The cause is conditioning, not the equation: at 512 bits the
+  covariance is strictly positive definite everywhere, but `(I − A⊗A)` has
+  `cond` 2–5e16 because the bilinear map drives `1 − ρ(A) = 7.32e-3·τ` while the
+  DF2T realization's non-normality `κ(V) ≈ 454/τ` is SQUARED by the Kronecker
+  product. Balancing was measured and does nothing — non-normality is not
+  removable by a diagonal similarity. Solving for a factor also makes PSD
+  structural rather than clamped, and a Cholesky factor is unique given positive
+  diagonals, which retires the eigenvector sign-canonicalization the old form
+  needed (LAPACK does not pin its sign choice, and `L` sits upstream of every
+  bitwise gate). The `P = 0` identity placeholder is handled by an explicit early
+  return. Gates: Q-F6 (contour-integral oracle), Q-F7 (PSD scan), Q-F8
+  (precision convergence).
 - Counter map (word 4 = `_DOMAIN_SD | step_hi16` unchanged; classical
   counters byte-identical to before the feature — pinned by literal Philox
   words in test_quantum_thermostat.jl):
