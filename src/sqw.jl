@@ -33,22 +33,22 @@ function trajectory_observable(H::TiledHamiltonian;
 end
 
 """
-    trajectory(res::LLGResult; name = :spins)
+    trajectory(result::LLGResult; name = :spins)
         -> (; traj::AbstractArray{Float64,3}, times::Vector{Float64})
 
 The recorded trajectory as a zero-copy `3 × n_sites × n_meas` reshape of
-`res.series[name]`, with its time axis. When the run's final measurement was off
+`result.series[name]`, with its time axis. When the run's final measurement was off
 the `measure_interval` grid (`nsteps % measure_interval ≠ 0`), that last column
 is dropped — the S(q,ω) estimator needs a strictly uniform time grid.
 """
-function trajectory(res::LLGResult; name::Symbol = :spins)
-    haskey(res.series, name) || throw(ArgumentError(
+function trajectory(result::LLGResult; name::Symbol = :spins)
+    haskey(result.series, name) || throw(ArgumentError(
         "no series :$name — pass trajectory_observable(H) to run_llg's " *
         "observables"))
-    mat = res.series[name]
+    mat = result.series[name]
     size(mat, 1) % 3 == 0 || throw(ArgumentError(
         "series :$name has $(size(mat, 1)) components — not a 3n trajectory"))
-    times = res.times
+    times = result.times
     nt = length(times)
     if nt >= 3 && !isapprox(times[nt] - times[nt-1], times[2] - times[1];
                             rtol = 1e-8)
@@ -332,6 +332,12 @@ exactly `u = x̂, v = ŷ`.
 """
 function sqw_plusminus(r::SQWResult;
                        axis::SVector{3,Float64} = SVector(0.0, 0.0, 1.0))
+    # A zero axis has no circulation sense to resolve, and normalizing it silently
+    # produces an all-`NaN` spectrum. `sqw_perp` makes its degenerate case loud; so
+    # does this one.
+    norm(axis) > 0 || throw(ArgumentError(
+        "sqw_plusminus: `axis` must be a nonzero vector — it names the quantization " *
+        "axis whose circulation sense the ± channels resolve"))
     n = axis / norm(axis)
     u, v = if n == SVector(0.0, 0.0, 1.0)
         SVector(1.0, 0.0, 0.0), SVector(0.0, 1.0, 0.0)
@@ -404,7 +410,7 @@ end
 
 # One q-chunk of the estimator (thread-disjoint writes into S / S_el).
 function _sqw_chunk!(S::Array{ComplexF64,4}, S_el::Array{ComplexF64,3},
-                     lo::Int, hi::Int, traj, ebar::Matrix{Float64},
+                     lo::Int, hi::Int, traj, spin_means::Matrix{Float64},
                      H::TiledHamiltonian, crystal::Crystal,
                      ms::Vector{NTuple{3,Int}}, active::Vector{Int},
                      p)::Nothing
@@ -424,9 +430,9 @@ function _sqw_chunk!(S::Array{ComplexF64,4}, S_el::Array{ComplexF64,3},
         mbar3 = 0.0 + 0.0im
         for s in active                                # fixed site order
             ph = phi[s]
-            e1 = ebar[1, s]
-            e2 = ebar[2, s]
-            e3 = ebar[3, s]
+            e1 = spin_means[1, s]
+            e2 = spin_means[2, s]
+            e3 = spin_means[3, s]
             mbar1 += ph * e1
             mbar2 += ph * e2
             mbar3 += ph * e3
@@ -482,7 +488,7 @@ truncated, never zero-padded) with fractional `overlap` and a `:hann` (default)
 or `:none` window; `discard` leading measurements are dropped as thermalization.
 The result is bit-identical for any `ntasks` and across repeated calls.
 
-Convenience methods: `structure_factor(res::LLGResult, H, crystal, qs;
+Convenience methods: `structure_factor(result::LLGResult, H, crystal, qs;
 name = :spins, …)` (records via [`trajectory_observable`](@ref); the off-grid
 final measurement, if any, is dropped), `structure_factor(::Vector{LLGResult},
 …)` (a seed ensemble: spectra averaged, realization standard errors in `err`
@@ -524,23 +530,23 @@ function structure_factor(traj::AbstractArray{<:Real,3},
                      window, seglength === nothing ? nothing : Int(seglength))
     p = (; p0..., dtm, nsegments = Int(nsegments))
     # per-site mean over the analysis window (ONE global mean, never per segment)
-    ebar = zeros(3, n)
+    spin_means = zeros(3, n)
     @inbounds for j = 1:p.L, s in active, α = 1:3
-        ebar[α, s] += traj[α, s, p.c0+j-1]
+        spin_means[α, s] += traj[α, s, p.c0+j-1]
     end
-    ebar ./= p.L
+    spin_means ./= p.L
     nq = length(qsv)
     nw = p.M
     S = zeros(ComplexF64, 3, 3, nq, nw)
     S_el = Array{ComplexF64,3}(undef, 3, 3, nq)
     ntk = min(Int(ntasks), nq)
     if ntk == 1
-        _sqw_chunk!(S, S_el, 1, nq, traj, ebar, H, crystal, ms, active, p)
+        _sqw_chunk!(S, S_el, 1, nq, traj, spin_means, H, crystal, ms, active, p)
     else
         chunk = cld(nq, ntk)
         @sync for lo = 1:chunk:nq
             hi = min(lo + chunk - 1, nq)
-            Threads.@spawn _sqw_chunk!(S, S_el, lo, hi, traj, ebar, H, crystal,
+            Threads.@spawn _sqw_chunk!(S, S_el, lo, hi, traj, spin_means, H, crystal,
                                        ms, active, p)
         end
     end
@@ -551,11 +557,11 @@ function structure_factor(traj::AbstractArray{<:Real,3},
                      Int(discard), dtm, 1)
 end
 
-function structure_factor(res::LLGResult, H::TiledHamiltonian, crystal::Crystal,
+function structure_factor(result::LLGResult, H::TiledHamiltonian, crystal::Crystal,
                           qs::AbstractVector{<:AbstractVector{<:Real}};
                           name::Symbol = :spins, kwargs...)::SQWResult
-    tr = trajectory(res; name)
-    return structure_factor(tr.traj, tr.times, H, crystal, qs; kwargs...)
+    trace = trajectory(result; name)
+    return structure_factor(trace.traj, trace.times, H, crystal, qs; kwargs...)
 end
 
 function structure_factor(results::AbstractVector{LLGResult},
@@ -572,11 +578,11 @@ function structure_factor(results::AbstractVector{LLGResult},
     Ssq = abs2.(r1.S)
     Sel = copy(r1.S_el)
     for r = 2:R
-        tr = trajectory(results[r]; name)
-        tr.times == first_tr.times || throw(ArgumentError(
+        trace = trajectory(results[r]; name)
+        trace.times == first_tr.times || throw(ArgumentError(
             "realization $r has a different time grid — ensemble members must " *
             "share dt, nsteps, and measure_interval"))
-        ri = structure_factor(tr.traj, tr.times, H, crystal, qs; kwargs...)
+        ri = structure_factor(trace.traj, trace.times, H, crystal, qs; kwargs...)
         Ssum .+= ri.S
         Ssq .+= abs2.(ri.S)
         Sel .+= ri.S_el
@@ -652,11 +658,11 @@ function channel_sumrule(traj::AbstractArray{<:Real,3},
         H.site_active[s] == act_atom[mod1(s, n_a)] ||
             error("site activity is not uniform across cells")
     end
-    ebar = zeros(3, n)
+    spin_means = zeros(3, n)
     @inbounds for j = 1:M, s = 1:n, α = 1:3
-        ebar[α, s] += traj[α, s, j]
+        spin_means[α, s] += traj[α, s, j]
     end
-    ebar ./= M
+    spin_means ./= M
     buf = Vector{ComplexF64}(undef, M)
     lhs = 0.0
     for m3 = 0:N3-1, m2 = 0:N2-1, m1 = 0:N1-1
@@ -670,7 +676,7 @@ function channel_sumrule(traj::AbstractArray{<:Real,3},
                     ph = cis(-2π * (mod(num, Nc) / Nc)) / sqrt(Nc)
                     s = a + n_a * (c1 + N1 * (c2 + N2 * c3))
                     for j = 1:M
-                        buf[j] += ph * (traj[α, s, j] - ebar[α, s])
+                        buf[j] += ph * (traj[α, s, j] - spin_means[α, s])
                     end
                 end
                 _fft_pow2!(buf, tw)
@@ -681,7 +687,7 @@ function channel_sumrule(traj::AbstractArray{<:Real,3},
     rhs = 0.0
     @inbounds for s = 1:n
         H.site_active[s] || continue
-        rhs += 1 - (ebar[1, s]^2 + ebar[2, s]^2 + ebar[3, s]^2)
+        rhs += 1 - (spin_means[1, s]^2 + spin_means[2, s]^2 + spin_means[3, s]^2)
     end
     return (; lhs, rhs)
 end

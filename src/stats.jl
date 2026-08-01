@@ -5,9 +5,9 @@
 # (`LogBinner`/`BinStore`/`bin_means`/`jackknife`/`std_error`/`tau_int`).
 
 """
-    equilibrium_stats(res::LLGResult;
+    equilibrium_stats(result::LLGResult;
                       evaluables = standard_evaluables(),
-                      discard = length(res.times) ÷ 2,
+                      discard = length(result.times) ÷ 2,
                       nbins = 32, allow_evaluables = false)
         -> Dict{Symbol,ObservableStat}
 
@@ -16,7 +16,11 @@ every recorded observable series becomes an `ObservableStat` (autocorrelation-aw
 mean/error/τ_int via `SLCEMonteCarlo.LogBinner`), and each `Evaluable` — the same
 definitions the MC drivers accept, e.g. `SLCEMonteCarlo.standard_evaluables()` —
 is jackknifed over equal-weight bins of its (scalar) input observables, with
-`f(means, kT, n)` receiving the run's `kT` and its active-site count.
+`f(means, kT, n)` receiving the run's `kT` and the site count its **`scope`**
+declares: `n_active` for `scope = :energy`, `n_spin_active` otherwise. The two
+coincide on a pure-spin model and diverge exactly where a joint model has
+displacement-only sites, so a `:spin`-scoped evaluable written against "the active
+site count" is wrong by `n_active / n_spin_active` the first time it meets one.
 
 - `discard`: number of leading measurements dropped as thermalization (default:
   the first half). The sLLG equilibration time scales like `1/α` — inspect the
@@ -40,15 +44,15 @@ default) estimate something else there and are **refused** unless
 time-average stats (always valid), or take response functions from finite
 differences across runs (e.g. specific heat from `d⟨E⟩/dT`).
 """
-function equilibrium_stats(res::LLGResult;
+function equilibrium_stats(result::LLGResult;
                            evaluables::Vector{Evaluable} = standard_evaluables(),
-                           discard::Integer = length(res.times) ÷ 2,
+                           discard::Integer = length(result.times) ÷ 2,
                            nbins::Integer = 32,
                            allow_evaluables::Bool = false)::Dict{Symbol,ObservableStat}
-    isfinite(res.kT) || throw(ArgumentError(
+    isfinite(result.kT) || throw(ArgumentError(
         "equilibrium_stats needs a thermostatted run (run_llg with temperature " *
         "or kT); this result is a deterministic trajectory"))
-    res.thermostat == "quantum" && !isempty(evaluables) && !allow_evaluables &&
+    result.thermostat == "quantum" && !isempty(evaluables) && !allow_evaluables &&
         throw(ArgumentError(
             "fluctuation-formula evaluables assume a classical Boltzmann " *
             "ensemble, which a QuantumThermostat run is not — pass " *
@@ -56,7 +60,7 @@ function equilibrium_stats(res::LLGResult;
             "stats, take response functions from finite differences across " *
             "runs (specific heat from d⟨E⟩/dT), or insist with " *
             "allow_evaluables = true"))
-    nm = length(res.times)
+    nm = length(result.times)
     0 <= discard < nm || throw(ArgumentError(
         "discard must be in [0, $(nm - 1)]; got $discard"))
     nbins >= 2 || throw(ArgumentError("nbins must be ≥ 2; got $nbins"))
@@ -66,7 +70,7 @@ function equilibrium_stats(res::LLGResult;
     stats = Dict{Symbol,ObservableStat}()
     stores = Dict{Symbol,BinStore}()
     ncomps = Dict{Symbol,Int}()
-    for (name, mat) in res.series
+    for (name, mat) in result.series
         ncomp = size(mat, 1)
         binner = LogBinner(ncomp)
         store = BinStore(ncomp, bin_size, nbins)
@@ -105,8 +109,8 @@ function equilibrium_stats(res::LLGResult;
         # This used to pass `n_active` unconditionally — invisible on a pure-spin
         # model, where the two counts coincide, and wrong by their ratio on a joint
         # Hamiltonian with displacement-only sites.
-        n = ev.scope === :energy ? res.n_active : res.n_spin_active
-        f = (ms...) -> ev.f(NamedTuple{keys_tuple}(ms), res.kT, n)
+        n = ev.scope === :energy ? result.n_active : result.n_spin_active
+        f = (ms...) -> ev.f(NamedTuple{keys_tuple}(ms), result.kT, n)
         est, err = jackknife(f, cols)
         stats[ev.name] = ObservableStat(ev.name, [est], [err], [NaN], nb)
     end

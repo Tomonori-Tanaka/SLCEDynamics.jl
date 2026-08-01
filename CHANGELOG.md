@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — `sqw_plusminus` returned an all-`NaN` spectrum for a zero axis
+
+`axis / norm(axis)` on a zero vector propagated `NaN` through the frame construction and
+into every element of the returned matrix. `sqw_perp` makes its degenerate case loud;
+this one now does too.
+
+### Changed — `equilibrium_stats` documents which site count an evaluable receives
+
+The docstring said `f(means, kT, n)` receives "its active-site count"; the code passes
+`n_active` for `scope = :energy` and `n_spin_active` otherwise. The two coincide on a
+pure-spin model and diverge exactly where a joint model has displacement-only sites, so
+a `:spin`-scoped evaluable written against the documented normalization would have been
+wrong by `n_active / n_spin_active` the first time it met one.
+
 ### Added — the documentation is published
 
 - **<https://tomonori-tanaka.github.io/SLCEDynamics.jl/dev/>** — the Documenter site is
