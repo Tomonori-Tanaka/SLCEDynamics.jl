@@ -5,6 +5,8 @@
 
 **Documentation:** <https://tomonori-tanaka.github.io/SLCEDynamics.jl/dev/>
 
+**Reading the source:** [`ARCHITECTURE.md`](ARCHITECTURE.md) — dependency graph, include layering, and an ordered reading path through `src/`.
+
 Atomistic spin dynamics (Landau–Lifshitz–Gilbert) for fitted spin–lattice cluster-expansion
 (SLCE) models — the dynamics member of the SLCE family:
 
