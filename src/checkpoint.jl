@@ -57,80 +57,80 @@ function _config_verbatim(m::Matrix{Float64}, n::Int)::SpinConfig
                        for s = 1:n])
 end
 
-function _write_ckpt_llg(ck::_LLGCheckpointer, spec::_RunSpec, config::SpinConfig,
-                         tr::_Trace, step::Int,
+function _write_ckpt_llg(checkpointer::_LLGCheckpointer, run_spec::_RunSpec, config::SpinConfig,
+                         trace::_Trace, step::Int,
                          fstate::Union{Nothing,_FilterState})::Nothing
-    prob = spec.prob
-    k = tr.k
-    tmp = ck.path * ".tmp." * string(getpid())   # one writer per path assumed
+    prob = run_spec.prob
+    k = trace.k
+    tmp = checkpointer.path * ".tmp." * string(getpid())   # one writer per path assumed
     jldopen(tmp, "w") do f
         f["schema_version"] = _CKPT_SCHEMA_LLG
         f["kind"] = "llg"
         f["julia_version"] = string(VERSION)
         f["package_version"] = string(pkgversion(SLCEDynamics))
-        f["model_fingerprint"] = ck.fingerprint
-        f["checkpoint_interval"] = ck.interval
+        f["model_fingerprint"] = checkpointer.fingerprint
+        f["checkpoint_interval"] = checkpointer.interval
         # trajectory-defining problem parameters (validated == on resume; the
         # Hamiltonian itself is pinned by the fingerprint)
         f["problem/magmom"] = prob.magmom
         f["problem/alpha"] = prob.alpha
         f["problem/g"] = prob.g
         f["problem/b_ext"] = Vector{Float64}(prob.b_ext)
-        f["run/dt"] = spec.dt
-        f["run/nsteps"] = spec.nsteps
-        f["run/measure_interval"] = spec.measure_interval
-        f["run/renorm_interval"] = spec.renorm_interval
-        f["run/integrator"] = _integrator_name(spec.integrator)
-        f["run/kT"] = spec.kt                    # NaN ⇒ deterministic run
-        f["run/seed"] = spec.seed
-        f["run/compute"] = String(spec.compute)
-        f["run/backend"] = spec.backend_tag
-        f["run/workgroupsize"] = spec.workgroupsize
-        f["run/thermostat"] = _thermostat_string(spec.thermostat)
+        f["run/dt"] = run_spec.dt
+        f["run/nsteps"] = run_spec.nsteps
+        f["run/measure_interval"] = run_spec.measure_interval
+        f["run/renorm_interval"] = run_spec.renorm_interval
+        f["run/integrator"] = _integrator_name(run_spec.integrator)
+        f["run/kT"] = run_spec.kt                    # NaN ⇒ deterministic run
+        f["run/seed"] = run_spec.seed
+        f["run/compute"] = String(run_spec.compute)
+        f["run/backend"] = run_spec.backend_tag
+        f["run/workgroupsize"] = run_spec.workgroupsize
+        f["run/thermostat"] = _thermostat_string(run_spec.thermostat)
         if fstate !== nothing
             f["run/filter_id"] = _QT_FILTER_ID
             f["run/filter/coeffs"] = _filter_coeffs(fstate.filter)
             f["state/filter"] = copy(fstate.x)
         end
-        f["run/observable_names"] = String[String(o.name) for o in spec.observables]
-        f["run/observable_ncomps"] = Int[o.ncomp for o in spec.observables]
+        f["run/observable_names"] = String[String(o.name) for o in run_spec.observables]
+        f["run/observable_ncomps"] = Int[o.ncomp for o in run_spec.observables]
         f["progress/step"] = step
         f["progress/nmeas"] = k
         f["state/config"] = SLCEMonteCarlo.to_matrix(config)
-        f["trace/times"] = tr.times[1:k]
-        f["trace/energies"] = tr.energies[1:k]
-        f["trace/mean_spins"] = Float64[tr.means[j][row] for row = 1:3, j = 1:k]
-        for o in spec.observables
-            f["trace/series/$(o.name)"] = tr.series[o.name][:, 1:k]
+        f["trace/times"] = trace.times[1:k]
+        f["trace/energies"] = trace.energies[1:k]
+        f["trace/mean_spins"] = Float64[trace.means[j][row] for row = 1:3, j = 1:k]
+        for o in run_spec.observables
+            f["trace/series/$(o.name)"] = trace.series[o.name][:, 1:k]
         end
     end
-    mv(tmp, ck.path; force = true)
+    mv(tmp, checkpointer.path; force = true)
     return nothing
 end
 
 # Per-step tick (cadence) and the unconditional completion write. Writing
 # consumes no RNG (this package holds none) and never perturbs the trajectory.
-_ck_llg!(::Nothing, ::_RunSpec, ::SpinConfig, ::_Trace, ::Int, ::Bool,
+_checkpoint_llg!(::Nothing, ::_RunSpec, ::SpinConfig, ::_Trace, ::Int, ::Bool,
          fstate = nothing) = nothing
-function _ck_llg!(ck::_LLGCheckpointer, spec::_RunSpec, config::SpinConfig,
-                  tr::_Trace, step::Int, final::Bool,
+function _checkpoint_llg!(checkpointer::_LLGCheckpointer, run_spec::_RunSpec, config::SpinConfig,
+                  trace::_Trace, step::Int, final::Bool,
                   fstate::Union{Nothing,_FilterState} = nothing)::Nothing
     if !final
-        ck.interval > 0 || return nothing
-        ck.since += 1
-        ck.since >= ck.interval || return nothing
-        ck.since = 0
+        checkpointer.interval > 0 || return nothing
+        checkpointer.since += 1
+        checkpointer.since >= checkpointer.interval || return nothing
+        checkpointer.since = 0
     end
-    _write_ckpt_llg(ck, spec, config, tr, step, fstate)
+    _write_ckpt_llg(checkpointer, run_spec, config, trace, step, fstate)
     return nothing
 end
 
-# Whether the NEXT `_ck_llg!` call at this step would actually write — the GPU
+# Whether the NEXT `_checkpoint_llg!` call at this step would actually write — the GPU
 # loop uses this to prepare a host snapshot only when one is needed. Must mirror
-# `_ck_llg!`'s cadence exactly (coupled site).
-_ck_due(::Nothing, ::Bool)::Bool = false
-_ck_due(ck::_LLGCheckpointer, final::Bool)::Bool =
-    final || (ck.interval > 0 && ck.since + 1 >= ck.interval)
+# `_checkpoint_llg!`'s cadence exactly (coupled site).
+_checkpoint_due(::Nothing, ::Bool)::Bool = false
+_checkpoint_due(checkpointer::_LLGCheckpointer, final::Bool)::Bool =
+    final || (checkpointer.interval > 0 && checkpointer.since + 1 >= checkpointer.interval)
 
 # Read and validate an LLG checkpoint eagerly, closing the file before any long
 # computation starts (the resumed run typically overwrites this very path).
@@ -240,28 +240,28 @@ end
 
 # Build the trace prefix (and the truncation-edge final measurement) for a
 # resume — shared by both resume methods.
-function _resume_trace(spec::_RunSpec, data, prob::LLGProblem,
+function _resume_trace(run_spec::_RunSpec, data, prob::LLGProblem,
                        observables::Vector{Observable})
-    tr = _make_trace(spec)
-    copyto!(tr.times, 1, data.times, 1, data.k)
-    copyto!(tr.energies, 1, data.energies, 1, data.k)
+    trace = _make_trace(run_spec)
+    copyto!(trace.times, 1, data.times, 1, data.k)
+    copyto!(trace.energies, 1, data.energies, 1, data.k)
     for j = 1:data.k
-        tr.means[j] = SVector{3,Float64}(data.means[1, j], data.means[2, j],
+        trace.means[j] = SVector{3,Float64}(data.means[1, j], data.means[2, j],
                                          data.means[3, j])
     end
     for o in observables
-        tr.series[o.name][:, 1:data.k] = data.series[o.name]
+        trace.series[o.name][:, 1:data.k] = data.series[o.name]
     end
-    tr.k = data.k
+    trace.k = data.k
     config = data.config
     # resuming a mid-run file to exactly its own step: the continuation loop is
     # empty, so take the (off-grid) final measurement it would otherwise record
-    if spec.nsteps == data.step && tr.k < _nmeas(spec.nsteps, data.mi)
-        tr.k += 1
-        _measure!(tr.energies, tr.means, tr.series, observables, tr.k,
-                  spec.nsteps * data.dt, tr.times, prob, config)
+    if run_spec.nsteps == data.step && trace.k < _nmeas(run_spec.nsteps, data.mi)
+        trace.k += 1
+        _measure!(trace.energies, trace.means, trace.series, observables, trace.k,
+                  run_spec.nsteps * data.dt, trace.times, prob, config)
     end
-    return tr, config
+    return trace, config
 end
 
 """
@@ -314,9 +314,9 @@ function SLCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
     local fstate::Union{Nothing,_FilterState}
     local th::AbstractThermostat
     if data.thermostat == "quantum"
-        filt = _filter_from_coeffs(data.filter_coeffs)
-        nlanes = 6 * length(filt.sections)
-        fstate = _FilterState(filt, _filter_state_verbatim(data.filter_state,
+        noise_filter = _filter_from_coeffs(data.filter_coeffs)
+        nlanes = 6 * length(noise_filter.sections)
+        fstate = _FilterState(noise_filter, _filter_state_verbatim(data.filter_state,
                                                            nlanes,
                                                            n_sites(prob.H)))
         th = QuantumThermostat()
@@ -324,11 +324,11 @@ function SLCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem;
         fstate = nothing
         th = ClassicalThermostat()
     end
-    spec = _RunSpec(prob, data.integrator, data.dt, ns_t, data.mi, data.renorm,
+    run_spec = _RunSpec(prob, data.integrator, data.dt, ns_t, data.mi, data.renorm,
                     data.kt, data.seed, observables, :cpu, "", 0, th)
-    tr, config = _resume_trace(spec, data, prob, observables)
+    trace, config = _resume_trace(run_spec, data, prob, observables)
     interval = checkpoint_interval === nothing ? data.stored_interval :
                Int(checkpoint_interval)
-    ck = _make_llg_checkpointer(checkpoint, interval, prob)
-    return _llg_loop!(spec, config, tr, data.step, Int(ntasks), ck, fstate)
+    checkpointer = _make_llg_checkpointer(checkpoint, interval, prob)
+    return _llg_loop!(run_spec, config, trace, data.step, Int(ntasks), checkpointer, fstate)
 end

@@ -34,12 +34,12 @@ end
                                   xi::Float64)::Float64
     u = xi
     @inbounds for j in eachindex(sections)
-        bq = sections[j]
+        biquad = sections[j]
         p1 = off + 2 * j - 1
         p2 = off + 2 * j
-        out = bq.b0 * u + x[s, p1]
-        x[s, p1] = bq.b1 * u - bq.a1 * out + x[s, p2]
-        x[s, p2] = bq.b2 * u - bq.a2 * out
+        out = biquad.b0 * u + x[s, p1]
+        x[s, p1] = biquad.b1 * u - biquad.a1 * out + x[s, p2]
+        x[s, p2] = biquad.b2 * u - biquad.a2 * out
         u = out
     end
     return u

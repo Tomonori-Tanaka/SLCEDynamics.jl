@@ -1,6 +1,6 @@
 # The GPU driver: `gpu_run_llg` + `_llg_loop_gpu!` + the GPU resume method
 # (decision record docs/specs/gpu-llg.md). The loop downloads a host snapshot
-# ONLY on measurement/checkpoint events (`_ck_due` mirrors `_ck_llg!`'s
+# ONLY on measurement/checkpoint events (`_checkpoint_due` mirrors `_checkpoint_llg!`'s
 # cadence); between events the per-step launches queue with no synchronization.
 
 """
@@ -98,32 +98,32 @@ function gpu_run_llg(prob::LLGProblem, config0::SpinConfig, gH;
     # host-side stationary init (the single bitwise surface), uploaded once;
     # validation shared with run_llg (one definition of the τ bound)
     fstate = _resolve_quantum_fstate(thermostat, thermo, kt, dtf, H, seed_u)
-    spec = _RunSpec(prob, integrator, dtf, ns, mi, Int(renorm_interval), kt,
+    run_spec = _RunSpec(prob, integrator, dtf, ns, mi, Int(renorm_interval), kt,
                     seed_u, observables, :gpu, _backend_tag(gH.backend), ws,
                     thermostat)
-    ck = _make_llg_checkpointer(checkpoint, checkpoint_interval, prob)
+    checkpointer = _make_llg_checkpointer(checkpoint, checkpoint_interval, prob)
     sigma = thermo ? _sigma_noise(prob, kt, dtf) : zeros(n)
     st = GPULLGState(gH, prob, config0, sigma, fstate)
-    tr = _make_trace(spec)
-    tr.k = 1
+    trace = _make_trace(run_spec)
+    trace.k = 1
     copyto!(st.h_config, config0)
-    _measure!(tr.energies, tr.means, tr.series, observables, 1, 0.0, tr.times,
+    _measure!(trace.energies, trace.means, trace.series, observables, 1, 0.0, trace.times,
               prob, st.h_config)
-    return _llg_loop_gpu!(spec, st, gH, tr, 0, ck, fstate)
+    return _llg_loop_gpu!(run_spec, st, gH, trace, 0, checkpointer, fstate)
 end
 
 # The device stepping loop from `step0` (already applied). Bit-identity of a
 # resumed run rests on the same absolute-step purity as the CPU loop (noise
 # counter, renorm cadence, measurement grid) plus the fixed (backend, ws).
-function _llg_loop_gpu!(spec::_RunSpec, st::GPULLGState, gH, tr::_Trace,
-                        step0::Int, ck,
+function _llg_loop_gpu!(run_spec::_RunSpec, st::GPULLGState, gH, trace::_Trace,
+                        step0::Int, checkpointer,
                         fstate::Union{Nothing,_FilterState} = nothing)::LLGResult
     backend = gH.backend
-    prob = spec.prob
-    thermo = isfinite(spec.kt)
-    ns = spec.nsteps
-    mi = spec.measure_interval
-    ws = spec.workgroupsize
+    prob = run_spec.prob
+    thermo = isfinite(run_spec.kt)
+    ns = run_spec.nsteps
+    mi = run_spec.measure_interval
+    ws = run_spec.workgroupsize
     n = n_sites(prob.H)
     # invokelatest on the launches below: the upstream JET-barrier convention
     # (see _gpu_step! — abstract-Backend kernel unions)
@@ -134,19 +134,19 @@ function _llg_loop_gpu!(spec::_RunSpec, st::GPULLGState, gH, tr::_Trace,
         if thermo
             if fstate === nothing
                 Base.invokelatest(nkern, st.dgth, st.dsigma, st.dactive,
-                                  spec.seed, step; ndrange = n)
+                                  run_spec.seed, step; ndrange = n)
             else
                 Base.invokelatest(qkern, st.dgth, st.dxstate, st.dsections,
-                                  st.dsigma, st.dactive, spec.seed, step;
+                                  st.dsigma, st.dactive, run_spec.seed, step;
                                   ndrange = n)
             end
         end
-        _gpu_step!(spec.integrator, st, gH, spec.dt, ws)
-        if spec.renorm_interval > 0 && step % spec.renorm_interval == 0
+        _gpu_step!(run_spec.integrator, st, gH, run_spec.dt, ws)
+        if run_spec.renorm_interval > 0 && step % run_spec.renorm_interval == 0
             Base.invokelatest(rkern, st.dconfig, st.dactive; ndrange = n)
         end
         meas = step % mi == 0 || step == ns
-        ckdue = _ck_due(ck, false)
+        ckdue = _checkpoint_due(checkpointer, false)
         if meas || ckdue
             KernelAbstractions.synchronize(backend)
             copyto!(st.h_config, st.dconfig)
@@ -155,20 +155,20 @@ function _llg_loop_gpu!(spec::_RunSpec, st::GPULLGState, gH, tr::_Trace,
             fstate !== nothing && ckdue && _download_filter!(fstate, st)
         end
         if meas
-            tr.k += 1
-            _measure!(tr.energies, tr.means, tr.series, spec.observables, tr.k,
-                      step * spec.dt, tr.times, prob, st.h_config)
+            trace.k += 1
+            _measure!(trace.energies, trace.means, trace.series, run_spec.observables, trace.k,
+                      step * run_spec.dt, trace.times, prob, st.h_config)
         end
-        _ck_llg!(ck, spec, st.h_config, tr, step, false, fstate)
+        _checkpoint_llg!(checkpointer, run_spec, st.h_config, trace, step, false, fstate)
     end
     KernelAbstractions.synchronize(backend)
     copyto!(st.h_config, st.dconfig)
     fstate !== nothing && _download_filter!(fstate, st)
-    _ck_llg!(ck, spec, st.h_config, tr, ns, true, fstate)
-    return LLGResult(tr.times, tr.energies, tr.means, tr.series,
-                     copy(st.h_config), ns, spec.dt, mi, spec.kt, spec.seed,
-                     prob.H.n_active, prob.H.n_spin_active, _compute_string(spec),
-                     _thermostat_string(spec.thermostat))
+    _checkpoint_llg!(checkpointer, run_spec, st.h_config, trace, ns, true, fstate)
+    return LLGResult(trace.times, trace.energies, trace.means, trace.series,
+                     copy(st.h_config), ns, run_spec.dt, mi, run_spec.kt, run_spec.seed,
+                     prob.H.n_active, prob.H.n_spin_active, _compute_string(run_spec),
+                     _thermostat_string(run_spec.thermostat))
 end
 
 """
@@ -223,9 +223,9 @@ function SLCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem, gH;
     local fstate::Union{Nothing,_FilterState}
     local th::AbstractThermostat
     if data.thermostat == "quantum"
-        filt = _filter_from_coeffs(data.filter_coeffs)
-        nlanes = 6 * length(filt.sections)
-        fstate = _FilterState(filt, _filter_state_verbatim(data.filter_state,
+        noise_filter = _filter_from_coeffs(data.filter_coeffs)
+        nlanes = 6 * length(noise_filter.sections)
+        fstate = _FilterState(noise_filter, _filter_state_verbatim(data.filter_state,
                                                            nlanes,
                                                            n_sites(H)))
         th = QuantumThermostat()
@@ -233,15 +233,15 @@ function SLCEMonteCarlo.resume(path::AbstractString, prob::LLGProblem, gH;
         fstate = nothing
         th = ClassicalThermostat()
     end
-    spec = _RunSpec(prob, data.integrator, data.dt, ns_t, data.mi, data.renorm,
+    run_spec = _RunSpec(prob, data.integrator, data.dt, ns_t, data.mi, data.renorm,
                     data.kt, data.seed, observables, :gpu, tag, ws, th)
-    tr, config = _resume_trace(spec, data, prob, observables)
+    trace, config = _resume_trace(run_spec, data, prob, observables)
     interval = checkpoint_interval === nothing ? data.stored_interval :
                Int(checkpoint_interval)
-    ck = _make_llg_checkpointer(checkpoint, interval, prob)
+    checkpointer = _make_llg_checkpointer(checkpoint, interval, prob)
     thermo = isfinite(data.kt)
     sigma = thermo ? _sigma_noise(prob, data.kt, data.dt) : zeros(n_sites(H))
     st = GPULLGState(gH, prob, config, sigma, fstate)
     copyto!(st.h_config, config)
-    return _llg_loop_gpu!(spec, st, gH, tr, data.step, ck, fstate)
+    return _llg_loop_gpu!(run_spec, st, gH, trace, data.step, checkpointer, fstate)
 end

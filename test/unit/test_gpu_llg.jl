@@ -245,10 +245,10 @@ end
         sections = [SD._Biquad(0.8, 0.3, -0.1, -0.5, 0.06),
                     SD._Biquad(1.1, -0.2, 0.05, -0.9, 0.25)]
         Aq, Bq, _, _ = SD._filter_state_space(sections)
-        filt = SD.ColoredNoiseFilter(sections,
+        noise_filter = SD.ColoredNoiseFilter(sections,
             SD._stationary_sqrt(SD._stationary_cov(Aq, Bq)))
-        fs_host = SD._init_filter_state(filt, Hd, seed)
-        fs_dev = SD._init_filter_state(filt, Hd, seed)
+        fs_host = SD._init_filter_state(noise_filter, Hd, seed)
+        fs_dev = SD._init_filter_state(noise_filter, Hd, seed)
         st = SD.GPULLGState(gHd, probd, c0d, sigma, fs_dev)
         host_gth = fill(zero(SVector{3,Float64}), n)
         qkern = SD._noise_kernel_quantum!(CPU(), 64)
@@ -256,7 +256,7 @@ end
             qkern(st.dgth, st.dxstate, st.dsections, st.dsigma, st.dactive,
                   seed, step; ndrange = n)
             KernelAbstractions.synchronize(CPU())
-            SD._fill_noise_quantum!(host_gth, Hd, sigma, fs_host.x, filt,
+            SD._fill_noise_quantum!(host_gth, Hd, sigma, fs_host.x, noise_filter,
                                     seed, step)
             @test Vector(st.dgth) == host_gth
             SD._download_filter!(fs_dev, st)
@@ -315,10 +315,10 @@ end
         ωl = _larmor_omega(2.0, B)
         prob = LLGProblem(H1; magmom = 2.0, b_ext = (0.0, 0.0, B))
         c0 = MC.SpinConfig([SVector(1.0, 0.0, 0.0)])
-        res = SD.gpu_run_llg(prob, c0, gH1; dt = 1.0, nsteps = 3600,
+        result = SD.gpu_run_llg(prob, c0, gH1; dt = 1.0, nsteps = 3600,
                              renorm_interval = 0)
         t = 3600.0
-        @test res.config[1] ≈ SVector(cos(ωl * t), sin(ωl * t), 0.0) atol = 1e-9
+        @test result.config[1] ≈ SVector(cos(ωl * t), sin(ωl * t), 0.0) atol = 1e-9
     end
 
     @testset "b2/b4: CPU vs GPU on the non-chaotic dimer (tolerance)" begin

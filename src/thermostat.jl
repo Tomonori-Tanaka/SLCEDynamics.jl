@@ -1,5 +1,5 @@
 # The thermostat selection layer and the semi-quantum colored-noise machinery
-# (decision record docs/specs/quantum-thermostat.md, settled spec S1–S18): the
+# (decision record docs/specs/quantum-thermostat.md, settled run_spec S1–S18): the
 # classical thermostat is the existing white-noise path, byte-identical to
 # previous versions; the quantum thermostat filters the SAME per-step white
 # draws (slots 0/1 — a same-seed classical and quantum run share one white
@@ -122,14 +122,14 @@ struct ColoredNoiseFilter
         1 <= ns <= _QT_MAX_NSECTIONS ||
             throw(ArgumentError("nsections must be in 1:$(_QT_MAX_NSECTIONS); " *
                                 "got $ns"))
-        for (j, bq) in enumerate(sections)
-            (isfinite(bq.b0) && isfinite(bq.b1) && isfinite(bq.b2) &&
-             isfinite(bq.a1) && isfinite(bq.a2)) ||
+        for (j, biquad) in enumerate(sections)
+            (isfinite(biquad.b0) && isfinite(biquad.b1) && isfinite(biquad.b2) &&
+             isfinite(biquad.a1) && isfinite(biquad.a2)) ||
                 throw(ArgumentError("section $j has non-finite coefficients"))
             # Jury stability criterion for z² + a1·z + a2 (real coefficients)
-            (abs(bq.a2) < 1 && abs(bq.a1) < 1 + bq.a2) ||
-                throw(ArgumentError("section $j is unstable (a1 = $(bq.a1), " *
-                                    "a2 = $(bq.a2))"))
+            (abs(biquad.a2) < 1 && abs(biquad.a1) < 1 + biquad.a2) ||
+                throw(ArgumentError("section $j is unstable (a1 = $(biquad.a1), " *
+                                    "a2 = $(biquad.a2))"))
         end
         m = 2 * ns
         size(L) == (m, m) || throw(DimensionMismatch(
@@ -156,25 +156,25 @@ function _filter_state_space(sections::Vector{_Biquad})
     B = zeros(m)
     crow = zeros(m)                      # state row of the current input u_j
     d = 1.0                              # ξ coefficient of the current input
-    for (j, bq) in enumerate(sections)
+    for (j, biquad) in enumerate(sections)
         p1 = 2 * j - 1
         p2 = 2 * j
-        g1 = bq.b1 - bq.a1 * bq.b0
-        g2 = bq.b2 - bq.a2 * bq.b0
+        g1 = biquad.b1 - biquad.a1 * biquad.b0
+        g2 = biquad.b2 - biquad.a2 * biquad.b0
         for k = 1:m
             A[p1, k] = g1 * crow[k]
             A[p2, k] = g2 * crow[k]
         end
-        A[p1, p1] += -bq.a1
+        A[p1, p1] += -biquad.a1
         A[p1, p2] += 1.0
-        A[p2, p1] += -bq.a2
+        A[p2, p1] += -biquad.a2
         B[p1] = g1 * d
         B[p2] = g2 * d
         for k = 1:m                      # u_{j+1} = y_j = b0·u_j + s1_j
-            crow[k] *= bq.b0
+            crow[k] *= biquad.b0
         end
         crow[p1] += 1.0
-        d *= bq.b0
+        d *= biquad.b0
     end
     return A, B, crow, d
 end
@@ -240,11 +240,11 @@ end
 # Checkpoint (schema v3) coefficient snapshot: column j = (b0, b1, b2, a1, a2)
 # of section j — the AUTHORITATIVE record a resume rebuilds the recurrence
 # from (coupled site: the reader `_filter_from_coeffs` and the schema doc).
-function _filter_coeffs(filt::ColoredNoiseFilter)::Matrix{Float64}
-    ns = length(filt.sections)
+function _filter_coeffs(noise_filter::ColoredNoiseFilter)::Matrix{Float64}
+    ns = length(noise_filter.sections)
     coeffs = Matrix{Float64}(undef, 5, ns)
-    for (j, bq) in enumerate(filt.sections)
-        coeffs[:, j] .= (bq.b0, bq.b1, bq.b2, bq.a1, bq.a2)
+    for (j, biquad) in enumerate(noise_filter.sections)
+        coeffs[:, j] .= (biquad.b0, biquad.b1, biquad.b2, biquad.a1, biquad.a2)
     end
     return coeffs
 end
@@ -311,9 +311,9 @@ end
 # Fresh-run state: every active site starts in the EXACT stationary law of the
 # filter (x₀ = L·ζ per component, ζ Philox-keyed at step 0 — no burn-in), so a
 # run is a pure function of the seed with no carried state before step 1.
-function _init_filter_state(filt::ColoredNoiseFilter, H::TiledHamiltonian,
+function _init_filter_state(noise_filter::ColoredNoiseFilter, H::TiledHamiltonian,
                             seed::UInt64)::_FilterState
-    m = 2 * length(filt.sections)
+    m = 2 * length(noise_filter.sections)
     n = n_sites(H)
     x = zeros(3 * m, n)
     zeta = Vector{Float64}(undef, 3 * m)
@@ -330,13 +330,13 @@ function _init_filter_state(filt::ColoredNoiseFilter, H::TiledHamiltonian,
             for i = 1:m
                 acc = 0.0
                 for k = 1:m
-                    acc += filt.L[i, k] * zeta[off + k]
+                    acc += noise_filter.L[i, k] * zeta[off + k]
                 end
                 x[off + i, s] = acc
             end
         end
     end
-    return _FilterState(filt, x)
+    return _FilterState(noise_filter, x)
 end
 
 # One component's cascade update at site `s` (state rows `off + 1 … off + 2NS`,
@@ -346,12 +346,12 @@ end
                               s::Int, off::Int, xi::Float64)::Float64
     u = xi
     @inbounds for j in eachindex(sections)
-        bq = sections[j]
+        biquad = sections[j]
         p1 = off + 2 * j - 1
         p2 = off + 2 * j
-        out = bq.b0 * u + x[p1, s]
-        x[p1, s] = bq.b1 * u - bq.a1 * out + x[p2, s]
-        x[p2, s] = bq.b2 * u - bq.a2 * out
+        out = biquad.b0 * u + x[p1, s]
+        x[p1, s] = biquad.b1 * u - biquad.a1 * out + x[p2, s]
+        x[p2, s] = biquad.b2 * u - biquad.a2 * out
         u = out
     end
     return u
@@ -363,9 +363,9 @@ end
 # the Stratonovich structure, exactly as the classical path).
 function _fill_noise_quantum!(gth::Vector{SVector{3,Float64}},
                               H::TiledHamiltonian, sigma::Vector{Float64},
-                              x::Matrix{Float64}, filt::ColoredNoiseFilter,
+                              x::Matrix{Float64}, noise_filter::ColoredNoiseFilter,
                               seed::UInt64, step::Int)::Nothing
-    sections = filt.sections
+    sections = noise_filter.sections
     m = 2 * length(sections)
     @inbounds for s = 1:n_sites(H)
         if !H.site_active[s]

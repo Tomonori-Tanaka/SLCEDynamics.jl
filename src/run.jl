@@ -74,8 +74,8 @@ struct _RunSpec
     thermostat::AbstractThermostat   # ClassicalThermostat() unless quantum sLLG
 end
 
-_compute_string(spec::_RunSpec)::String =
-    spec.compute === :cpu ? "cpu" : "gpu:" * spec.backend_tag
+_compute_string(run_spec::_RunSpec)::String =
+    run_spec.compute === :cpu ? "cpu" : "gpu:" * run_spec.backend_tag
 
 # The measurement record under construction: the LLGResult arrays plus the count
 # of columns filled so far (what a mid-run checkpoint persists).
@@ -92,13 +92,13 @@ end
 _nmeas(nsteps::Int, mi::Int)::Int =
     1 + div(nsteps, mi) + (nsteps % mi == 0 ? 0 : 1)
 
-function _make_trace(spec::_RunSpec)::_Trace
-    nmeas = _nmeas(spec.nsteps, spec.measure_interval)
+function _make_trace(run_spec::_RunSpec)::_Trace
+    nmeas = _nmeas(run_spec.nsteps, run_spec.measure_interval)
     return _Trace(Vector{Float64}(undef, nmeas), Vector{Float64}(undef, nmeas),
                   Vector{SVector{3,Float64}}(undef, nmeas),
                   Dict{Symbol,Matrix{Float64}}(
                       o.name => Matrix{Float64}(undef, o.ncomp, nmeas)
-                      for o in spec.observables), 0)
+                      for o in run_spec.observables), 0)
 end
 
 """
@@ -225,60 +225,60 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
         seed_u = 0
     end
     fstate = _resolve_quantum_fstate(thermostat, thermo, kt, dtf, H, seed_u)
-    spec = _RunSpec(prob, integrator, dtf, ns, mi, Int(renorm_interval), kt,
+    run_spec = _RunSpec(prob, integrator, dtf, ns, mi, Int(renorm_interval), kt,
                     seed_u, observables, :cpu, "", 0, thermostat)
-    ck = _make_llg_checkpointer(checkpoint, checkpoint_interval, prob)
-    tr = _make_trace(spec)
-    tr.k = 1
-    _measure!(tr.energies, tr.means, tr.series, observables, 1, 0.0, tr.times,
+    checkpointer = _make_llg_checkpointer(checkpoint, checkpoint_interval, prob)
+    trace = _make_trace(run_spec)
+    trace.k = 1
+    _measure!(trace.energies, trace.means, trace.series, observables, 1, 0.0, trace.times,
               prob, config)
-    return _llg_loop!(spec, config, tr, 0, Int(ntasks), ck, fstate)
+    return _llg_loop!(run_spec, config, trace, 0, Int(ntasks), checkpointer, fstate)
 end
 
-# The stepping loop from `step0` (already applied) to `spec.nsteps`, shared by
-# `run_llg` and `resume`. `tr` holds the measurements up to and including step
+# The stepping loop from `step0` (already applied) to `run_spec.nsteps`, shared by
+# `run_llg` and `resume`. `trace` holds the measurements up to and including step
 # `step0`'s grid position; bit-identity of a resumed run rests on every per-step
 # effect being a pure function of the absolute step index (the Philox noise
 # counter, the renormalization cadence, the measurement grid).
-# (`ck` is `nothing` or a `_LLGCheckpointer` — defined in checkpoint.jl, which
+# (`checkpointer` is `nothing` or a `_LLGCheckpointer` — defined in checkpoint.jl, which
 # is included after this file, so the annotation stays off.)
-function _llg_loop!(spec::_RunSpec, config::SpinConfig, tr::_Trace, step0::Int,
-                    ntasks::Int, ck,
+function _llg_loop!(run_spec::_RunSpec, config::SpinConfig, trace::_Trace, step0::Int,
+                    ntasks::Int, checkpointer,
                     fstate::Union{Nothing,_FilterState} = nothing)::LLGResult
-    prob = spec.prob
+    prob = run_spec.prob
     H = prob.H
-    sc = _LLGScratch(n_sites(H))
-    thermo = isfinite(spec.kt)
-    sigma = thermo ? _sigma_noise(prob, spec.kt, spec.dt) : Float64[]
-    ns = spec.nsteps
-    mi = spec.measure_interval
+    scratch = _LLGScratch(n_sites(H))
+    thermo = isfinite(run_spec.kt)
+    sigma = thermo ? _sigma_noise(prob, run_spec.kt, run_spec.dt) : Float64[]
+    ns = run_spec.nsteps
+    mi = run_spec.measure_interval
     for step = (step0 + 1):ns
         # fstate !== nothing ⟺ quantum thermostatted run (run_llg's invariant);
         # both fills draw the same slots-0/1 white triple — shared realization
         if thermo
             if fstate === nothing
-                _fill_noise!(sc.gth, H, sigma, spec.seed, step)
+                _fill_noise!(scratch.gth, H, sigma, run_spec.seed, step)
             else
-                _fill_noise_quantum!(sc.gth, H, sigma, fstate.x, fstate.filter,
-                                     spec.seed, step)
+                _fill_noise_quantum!(scratch.gth, H, sigma, fstate.x, fstate.filter,
+                                     run_spec.seed, step)
             end
         end
-        _step!(spec.integrator, config, prob, spec.dt, sc, ntasks)
-        if spec.renorm_interval > 0 && step % spec.renorm_interval == 0
+        _step!(run_spec.integrator, config, prob, run_spec.dt, scratch, ntasks)
+        if run_spec.renorm_interval > 0 && step % run_spec.renorm_interval == 0
             _renormalize_active!(H, config)
         end
         if step % mi == 0 || step == ns
-            tr.k += 1
+            trace.k += 1
             # time = step count × dt, never accumulated
-            _measure!(tr.energies, tr.means, tr.series, spec.observables, tr.k,
-                      step * spec.dt, tr.times, prob, config)
+            _measure!(trace.energies, trace.means, trace.series, run_spec.observables, trace.k,
+                      step * run_spec.dt, trace.times, prob, config)
         end
-        _ck_llg!(ck, spec, config, tr, step, false, fstate)
+        _checkpoint_llg!(checkpointer, run_spec, config, trace, step, false, fstate)
     end
-    _ck_llg!(ck, spec, config, tr, ns, true, fstate)   # the completion write
-    return LLGResult(tr.times, tr.energies, tr.means, tr.series, config, ns,
-                     spec.dt, mi, spec.kt, spec.seed, H.n_active, H.n_spin_active,
-                     _compute_string(spec), _thermostat_string(spec.thermostat))
+    _checkpoint_llg!(checkpointer, run_spec, config, trace, ns, true, fstate)   # the completion write
+    return LLGResult(trace.times, trace.energies, trace.means, trace.series, config, ns,
+                     run_spec.dt, mi, run_spec.kt, run_spec.seed, H.n_active, H.n_spin_active,
+                     _compute_string(run_spec), _thermostat_string(run_spec.thermostat))
 end
 
 # One measurement row: the SLCE energy is computed once and shared by the

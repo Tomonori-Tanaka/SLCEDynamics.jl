@@ -26,13 +26,13 @@ end
         prob = LLGProblem(H; magmom = 2.0, b_ext = (0.0, 0.0, B))
         config0 = MC.SpinConfig([e0, e0, up, up])
         nsteps = 3600                              # ≈ one period (T = 3572.4 fs)
-        res = run_llg(prob, config0; dt = 1.0, nsteps = nsteps,
+        result = run_llg(prob, config0; dt = 1.0, nsteps = nsteps,
                       renorm_interval = 0)
         t = nsteps * 1.0
         analytic = SVector(cos(ωl * t), sin(ωl * t), 0.0)
         # constant rotation vector ⇒ the only error is rounding accumulation
-        @test res.config[1] ≈ analytic atol = 1e-9
-        @test res.config[2] ≈ analytic atol = 1e-9
+        @test result.config[1] ≈ analytic atol = 1e-9
+        @test result.config[2] ≈ analytic atol = 1e-9
         # precession sense: starting at +x it moves toward +y (γ > 0, B ∥ +z)
         early = run_llg(prob, config0; dt = 1.0, nsteps = 10)
         @test early.config[1][2] > 0
@@ -48,9 +48,9 @@ end
         prob = LLGProblem(H; magmom = 2.0, alpha = α, b_ext = (0.0, 0.0, B))
         config0 = MC.SpinConfig([e0, e0, up, up])
         t_end = 500.0
-        res = run_llg(prob, config0; dt = 1.0, nsteps = 500)
+        result = run_llg(prob, config0; dt = 1.0, nsteps = 500)
         analytic = _damped_analytic(π / 2, t_end, ωl, α)
-        @test res.config[1] ≈ analytic rtol = 1e-4
+        @test result.config[1] ≈ analytic rtol = 1e-4
         # observed order 2: halving dt shrinks the error ≈ 4×
         err(dt) = norm(run_llg(prob, config0; dt = dt,
                                nsteps = round(Int, t_end / dt)).config[1] -
@@ -58,8 +58,8 @@ end
         r = err(2.0) / err(1.0)
         @test 3.0 < r < 5.0
         # energy decreases monotonically toward alignment with B
-        @test res.energies[end] < res.energies[1]
-        @test all(diff(res.energies) .< 1e-12)
+        @test result.energies[end] < result.energies[1]
+        @test all(diff(result.energies) .< 1e-12)
     end
 
     @testset "HeunProjected agrees at order 2" begin
@@ -79,9 +79,9 @@ end
         prob = LLGProblem(H; magmom = 2.0, b_ext = (3.0, 0.0, 0.0))
         e34 = normalize(SVector(0.3, -0.5, 0.8))
         config0 = MC.SpinConfig([e0, e0, e34, e34])
-        res = run_llg(prob, config0; dt = 1.0, nsteps = 200)
+        result = run_llg(prob, config0; dt = 1.0, nsteps = 200)
         @test !H.site_active[3] && !H.site_active[4]
-        @test res.config[3] == e34                # no Zeeman on inactive sites
-        @test res.config[4] == e34
+        @test result.config[3] == e34                # no Zeeman on inactive sites
+        @test result.config[4] == e34
     end
 end

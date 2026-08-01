@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — internal names spelled out (no public surface touched)
+
+The `STYLE_GUIDE.md` §1 naming contract's safe tier, applied: internal locals and
+private helper functions now spell their words out. Nothing exported, nothing in the
+`public` tier, no struct field and no persisted key changed, so this is invisible to
+every caller and to every file on disk; the suites are green at the same counts.
+
+Locals: `sc` → `scratch` and `spec` → `run_spec` (both were §1.5 collisions — those
+two names belong to SLCEMonteCarlo's `SweepScratch` and SLCE's `BasisSpec`), `res` →
+`result`, `ck` → `checkpointer`, `tr` → `trace`, `filt` → `noise_filter`, `bq` →
+`biquad`, `ebar` → `spin_means`. Helpers: `_ck_llg!`/`_ck_due` →
+`_checkpoint_llg!`/`_checkpoint_due`. `G`, `gzee`, `gth` and `pref` are unchanged:
+`gzee` is a field of the exported `LLGProblem`, and the four are one family.
+
+`STYLE_GUIDE.md` §1.9 records what was renamed and what deliberately was not.
+
 ### Fixed — `sqw_plusminus` returned an all-`NaN` spectrum for a zero axis
 
 `axis / norm(axis)` on a zero vector propagated `NaN` through the frame construction and

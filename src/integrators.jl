@@ -79,48 +79,48 @@ end
 # One Depondt–Mertens step, in place. Inactive sites are skipped bitwise at both
 # stages (their `epred` entry is still filled so stage 2 sees a full config).
 function _step!(::DepondtMertens, config::SpinConfig, prob::LLGProblem,
-                dt::Float64, sc::_LLGScratch, ntasks::Int)::Nothing
+                dt::Float64, scratch::_LLGScratch, ntasks::Int)::Nothing
     H = prob.H
-    energy_gradient!(sc.G, H, config; ntasks = ntasks)
+    energy_gradient!(scratch.G, H, config; ntasks = ntasks)
     @inbounds for s = 1:n_sites(H)
         if !H.site_active[s]
-            sc.epred[s] = config[s]
+            scratch.epred[s] = config[s]
             continue
         end
-        ω1 = _omega(prob, s, config[s], sc.G[s], sc.gth[s])
-        sc.omega1[s] = ω1
-        sc.epred[s] = _rotate(config[s], ω1 * dt)
+        ω1 = _omega(prob, s, config[s], scratch.G[s], scratch.gth[s])
+        scratch.omega1[s] = ω1
+        scratch.epred[s] = _rotate(config[s], ω1 * dt)
     end
-    energy_gradient!(sc.G, H, sc.epred; ntasks = ntasks)
+    energy_gradient!(scratch.G, H, scratch.epred; ntasks = ntasks)
     @inbounds for s = 1:n_sites(H)
         H.site_active[s] || continue
-        ω2 = _omega(prob, s, sc.epred[s], sc.G[s], sc.gth[s])
-        config[s] = _rotate(config[s], (sc.omega1[s] + ω2) * (dt / 2))
+        ω2 = _omega(prob, s, scratch.epred[s], scratch.G[s], scratch.gth[s])
+        config[s] = _rotate(config[s], (scratch.omega1[s] + ω2) * (dt / 2))
     end
     return nothing
 end
 
 # One projected-Heun step, in place.
 function _step!(::HeunProjected, config::SpinConfig, prob::LLGProblem,
-                dt::Float64, sc::_LLGScratch, ntasks::Int)::Nothing
+                dt::Float64, scratch::_LLGScratch, ntasks::Int)::Nothing
     H = prob.H
-    energy_gradient!(sc.G, H, config; ntasks = ntasks)
+    energy_gradient!(scratch.G, H, config; ntasks = ntasks)
     @inbounds for s = 1:n_sites(H)
         if !H.site_active[s]
-            sc.epred[s] = config[s]
+            scratch.epred[s] = config[s]
             continue
         end
-        ω1 = _omega(prob, s, config[s], sc.G[s], sc.gth[s])
-        sc.omega1[s] = ω1
+        ω1 = _omega(prob, s, config[s], scratch.G[s], scratch.gth[s])
+        scratch.omega1[s] = ω1
         ep = config[s] + dt * cross(ω1, config[s])
-        sc.epred[s] = ep / norm(ep)
+        scratch.epred[s] = ep / norm(ep)
     end
-    energy_gradient!(sc.G, H, sc.epred; ntasks = ntasks)
+    energy_gradient!(scratch.G, H, scratch.epred; ntasks = ntasks)
     @inbounds for s = 1:n_sites(H)
         H.site_active[s] || continue
-        ω2 = _omega(prob, s, sc.epred[s], sc.G[s], sc.gth[s])
-        e = config[s] + (dt / 2) * (cross(sc.omega1[s], config[s]) +
-                                    cross(ω2, sc.epred[s]))
+        ω2 = _omega(prob, s, scratch.epred[s], scratch.G[s], scratch.gth[s])
+        e = config[s] + (dt / 2) * (cross(scratch.omega1[s], config[s]) +
+                                    cross(ω2, scratch.epred[s]))
         config[s] = e / norm(e)
     end
     return nothing

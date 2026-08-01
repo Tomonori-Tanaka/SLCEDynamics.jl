@@ -65,17 +65,17 @@ bqs = [b + 2 * abs(Jeff) * ((1 - cospi(2 * m1 / dims)) +
                             (1 - cospi(2 * m3 / dims)))
        for m1 = 0:(dims - 1), m2 = 0:(dims - 1), m3 = 0:(dims - 1)]
 # ⟨1 − e_z⟩ per site = (1/N)·Σ_q ⟨E_q⟩/b_q; ħω̃_q = (g/μ)·b_q.
-deficit_cl(kt) = sum(kt / bq for bq in bqs) / N
-deficit_qt(kt) = sum(kt * theta(g * bq / (magmom * kt)) / bq for bq in bqs) / N
+deficit_cl(kt) = sum(kt / biquad for biquad in bqs) / N
+deficit_qt(kt) = sum(kt * theta(g * biquad / (magmom * kt)) / biquad for biquad in bqs) / N
 
 # --- runs ---------------------------------------------------------------------
 prob = LLGProblem(H; magmom, alpha, b_ext = (0.0, 0.0, Bz))
 mobs = [Observable(:mz, 1, v -> sum(s[3] for s in v.config) / length(v.config))]
 
 function measure_m(thermostat, kt, seed)
-    res = run_llg(prob, MC.SpinConfig([up for _ = 1:N]); dt, nsteps, kT = kt,
+    result = run_llg(prob, MC.SpinConfig([up for _ = 1:N]); dt, nsteps, kT = kt,
                   seed, measure_interval = 40, observables = mobs, thermostat)
-    st = equilibrium_stats(res; evaluables = Evaluable[])[:mz]
+    st = equilibrium_stats(result; evaluables = Evaluable[])[:mz]
     return st.mean[1], st.err[1]
 end
 

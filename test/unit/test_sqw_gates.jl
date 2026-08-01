@@ -19,10 +19,10 @@ _iwbin(kp::Int, M::Int) = kp + (M >>> 1) + 1
         dts = 2π * k0 / (ωl * M)                   # mi = 1 ⇒ Δt_s = dt
         c0 = MC.SpinConfig([SVector(1.0, 0.0, 0.0)])
         prob = LLGProblem(H; magmom = 2.0, b_ext = (0.0, 0.0, B))
-        res = run_llg(prob, c0; dt = dts, nsteps = M - 1, measure_interval = 1,
+        result = run_llg(prob, c0; dt = dts, nsteps = M - 1, measure_interval = 1,
                       renorm_interval = 0,
                       observables = [trajectory_observable(H)])
-        r = structure_factor(res, H, cru, [[0.0, 0.0, 0.0]]; window = :none)
+        r = structure_factor(result, H, cru, [[0.0, 0.0, 0.0]]; window = :none)
         @test r.nfft == M
         MΔ = M * r.dt_meas
         sxx = [real(r.S[1, 1, 1, iw]) for iw = 1:M]
@@ -71,11 +71,11 @@ _iwbin(kp::Int, M::Int) = kp + (M >>> 1) + 1
         c0 = MC.SpinConfig([SVector(sin(θ), 0.0, cos(θ)),
                             SVector(-sin(θ), 0.0, cos(θ)), up, up])
         prob = LLGProblem(H; magmom = magmom)
-        res = run_llg(prob, c0; dt = dt, nsteps = mi * (M - 1),
+        result = run_llg(prob, c0; dt = dt, nsteps = mi * (M - 1),
                       measure_interval = mi, renorm_interval = 0,
                       observables = [trajectory_observable(H)])
         qs = [[0.0, 0.0, 0.0], [0.0, 0.0, 2.0]]
-        r = structure_factor(res, H, crd, qs; window = :none)
+        r = structure_factor(result, H, crd, qs; window = :none)
         @test r.nfft == M
         MΔ = M * r.dt_meas
         # (i) total-spin conservation: the q = 0 channel is purely elastic
@@ -92,8 +92,8 @@ _iwbin(kp::Int, M::Int) = kp + (M >>> 1) + 1
         @test spm[2, _iwbin(-k0, M)] <= 1e-6 * spm[2, _iwbin(k0, M)]
         # (iii) sum rules
         @test sum(spm[2, :]) / MΔ ≈ 2 * sin(θ)^2 rtol = 1e-4
-        tr = trajectory(res)
-        sr = SD.channel_sumrule(tr.traj, tr.times, H, crd)
+        trace = trajectory(result)
+        sr = SD.channel_sumrule(trace.traj, trace.times, H, crd)
         @test sr.lhs ≈ sr.rhs rtol = 1e-10
         @test sr.rhs ≈ 2 * sin(θ)^2 rtol = 1e-4
         # inactive atoms are excluded: randomizing their frozen directions
@@ -126,11 +126,11 @@ _iwbin(kp::Int, M::Int) = kp + (M >>> 1) + 1
                                     ε * sinpi(2 * (j - 1) / 4),
                                     sqrt(1 - ε^2)) for j = 1:4])
         prob = LLGProblem(H; magmom = magmom)
-        res = run_llg(prob, c0; dt = dt, nsteps = mi * (M - 1),
+        result = run_llg(prob, c0; dt = dt, nsteps = mi * (M - 1),
                       measure_interval = mi, renorm_interval = 0,
                       observables = [trajectory_observable(H)])
         qs = [[0.0, 0.0, 1.0], [0.0, 0.0, 3.0]]
-        r = structure_factor(res, H, crd, qs; window = :none)
+        r = structure_factor(result, H, crd, qs; window = :none)
         spm = sqw_plusminus(r)
         # the mode sits at (+q, +ω) — both signs pinned at once
         @test argmax(spm[1, :]) == _iwbin(k0, M)

@@ -91,14 +91,14 @@ end
         @test SD._stationary_sqrt(Pi) == zeros(2, 2)
         # seeded stream check: lag-0 variance of the stationary cascade output
         # equals h·P·hᵀ + d² (the closed form) within 4σ
-        filt = _qt_test_filter()
+        noise_filter = _qt_test_filter()
         rng = MersenneTwister(7)
         nsamp = 200_000
-        x = filt.L * randn(rng, 4)            # stationary start
+        x = noise_filter.L * randn(rng, 4)            # stationary start
         xm = reshape(x, 4, 1)
         acc = 0.0
         for _ = 1:nsamp
-            y = SD._qt_cascade!(xm, filt.sections, 1, 0, randn(rng))
+            y = SD._qt_cascade!(xm, noise_filter.sections, 1, 0, randn(rng))
             acc += y * y
         end
         var_ref = dot(h, P * h) + d^2
@@ -112,9 +112,9 @@ end
         H = MC.TiledHamiltonian(_dimer_model(); dims = (1, 1, 1))
         seed = UInt64(0x5eed)
         # L = I makes the init state the raw ζ draws — pins the counters exactly
-        filt = SD.ColoredNoiseFilter([SD._Biquad(1.0, 0.0, 0.0, 0.0, 0.0)],
+        noise_filter = SD.ColoredNoiseFilter([SD._Biquad(1.0, 0.0, 0.0, 0.0, 0.0)],
                                      Matrix(1.0 * I, 2, 2))
-        fs = SD._init_filter_state(filt, H, seed)
+        fs = SD._init_filter_state(noise_filter, H, seed)
         @test size(fs.x) == (6, MC.n_sites(H))
         for s = 1:MC.n_sites(H)
             if H.site_active[s]
@@ -137,13 +137,13 @@ end
         n = MC.n_sites(H)
         seed = UInt64(0xabcdef)
         sigma = [H.site_active[s] ? 0.5 + 0.1 * s : 0.0 for s = 1:n]
-        filt = _qt_test_filter()
-        m = 2 * length(filt.sections)
-        fs = SD._init_filter_state(filt, H, seed)
+        noise_filter = _qt_test_filter()
+        m = 2 * length(noise_filter.sections)
+        fs = SD._init_filter_state(noise_filter, H, seed)
         xref = copy(fs.x)
         gth = fill(zero(SVector{3,Float64}), n)
         for step = 1:5
-            SD._fill_noise_quantum!(gth, H, sigma, fs.x, filt, seed, step)
+            SD._fill_noise_quantum!(gth, H, sigma, fs.x, noise_filter, seed, step)
             for s = 1:n
                 if !H.site_active[s]
                     @test gth[s] === zero(SVector{3,Float64})
@@ -159,12 +159,12 @@ end
                 for (c, xi) in enumerate((n1, n2, n3))
                     off = (c - 1) * m
                     u = xi
-                    for (j, bq) in enumerate(filt.sections)
+                    for (j, biquad) in enumerate(noise_filter.sections)
                         p1 = off + 2 * j - 1
                         p2 = off + 2 * j
-                        out = bq.b0 * u + xref[p1, s]
-                        xref[p1, s] = bq.b1 * u - bq.a1 * out + xref[p2, s]
-                        xref[p2, s] = bq.b2 * u - bq.a2 * out
+                        out = biquad.b0 * u + xref[p1, s]
+                        xref[p1, s] = biquad.b1 * u - biquad.a1 * out + xref[p2, s]
+                        xref[p2, s] = biquad.b2 * u - biquad.a2 * out
                         u = out
                     end
                     ys[c] = u
@@ -239,9 +239,9 @@ end
         for tau in (0.005, 0.0152, 0.05, 0.1)
             kt = 0.01
             dtf = tau * SD.HBAR_EV_FS / kt
-            filt = SD._build_quantum_filter(kt, dtf)
-            @test length(filt.sections) == length(SD._QT_S_BIQUADS)
-            Pd = _qt_filter_psd(SD._filter_coeffs(filt), dtf)
+            noise_filter = SD._build_quantum_filter(kt, dtf)
+            @test length(noise_filter.sections) == length(SD._QT_S_BIQUADS)
+            Pd = _qt_filter_psd(SD._filter_coeffs(noise_filter), dtf)
             c = 2.0 / tau
             omega_of_xw(xw) = (2.0 / dtf) * atan(xw / c)
             relmax = 0.0
@@ -264,14 +264,14 @@ end
     @testset "F2: impulse response ≡ closed-form transfer function" begin
         kt = 0.01
         dtf = 0.05 * SD.HBAR_EV_FS / kt          # τ = 0.05 (moderate tails)
-        filt = SD._build_quantum_filter(kt, dtf)
-        Pd = _qt_filter_psd(SD._filter_coeffs(filt), dtf)
-        m = 2 * length(filt.sections)
+        noise_filter = SD._build_quantum_filter(kt, dtf)
+        Pd = _qt_filter_psd(SD._filter_coeffs(noise_filter), dtf)
+        m = 2 * length(noise_filter.sections)
         x = zeros(m, 1)
         ntap = 150_000
         h = Vector{Float64}(undef, ntap)
         for k = 1:ntap
-            h[k] = SD._qt_cascade!(x, filt.sections, 1, 0, k == 1 ? 1.0 : 0.0)
+            h[k] = SD._qt_cascade!(x, noise_filter.sections, 1, 0, k == 1 ? 1.0 : 0.0)
         end
         for omdt in (0.001, 0.01, 0.05, 0.2, 0.5, 1.5)
             om = omdt / dtf                       # ω [rad/fs] at ω·dt = omdt
@@ -286,19 +286,19 @@ end
     @testset "F3/F4: shipped-filter stationary law" begin
         kt = 0.01
         dtf = 1.0                                 # τ ≈ 0.0152 (the G1 setting)
-        filt = SD._build_quantum_filter(kt, dtf)
-        A, B, h, d = SD._filter_state_space(filt.sections)
+        noise_filter = SD._build_quantum_filter(kt, dtf)
+        A, B, h, d = SD._filter_state_space(noise_filter.sections)
         P = SD._stationary_cov(A, B)
         @test norm(P - (A * P * A' + B * B')) <= 1e-10 * max(1.0, norm(P))
-        @test norm(filt.L * filt.L' - P) <= 1e-10 * max(1.0, norm(P))
+        @test norm(noise_filter.L * noise_filter.L' - P) <= 1e-10 * max(1.0, norm(P))
         # F4: seeded stream variance vs the closed form h·P·hᵀ + d²
         rng = MersenneTwister(11)
-        x = filt.L * randn(rng, length(B))
+        x = noise_filter.L * randn(rng, length(B))
         xm = reshape(copy(x), length(B), 1)
         nsamp = 200_000
         acc = 0.0
         for _ = 1:nsamp
-            y = SD._qt_cascade!(xm, filt.sections, 1, 0, randn(rng))
+            y = SD._qt_cascade!(xm, noise_filter.sections, 1, 0, randn(rng))
             acc += y * y
         end
         var_ref = dot(h, P * h) + d^2
@@ -318,10 +318,10 @@ end
         up = SVector(0.0, 0.0, 1.0)
         cfg = MC.SpinConfig([up for _ = 1:MC.n_sites(H)])
         obs = [Observable(:ez, 1, v -> v.config[1][3])]
-        res = run_llg(prob, cfg; dt = dtf, nsteps, kT = kt, seed,
+        result = run_llg(prob, cfg; dt = dtf, nsteps, kT = kt, seed,
                       measure_interval = mi, observables = obs,
                       thermostat = SD.QuantumThermostat())
-        st = equilibrium_stats(res; evaluables = Evaluable[])[:ez]
+        st = equilibrium_stats(result; evaluables = Evaluable[])[:ez]
         return 1.0 - st.mean[1], st.err[1]
     end
 
@@ -427,10 +427,10 @@ end
         cfg = MC.SpinConfig([up for _ = 1:MC.n_sites(H)])
         obs = [Observable(:e12, 1, v -> dot(v.config[1], v.config[2])),
                Observable(:ezsum, 1, v -> v.config[1][3] + v.config[2][3])]
-        res = run_llg(prob, cfg; dt = dtf, nsteps = 3_000_000, kT = kt,
+        result = run_llg(prob, cfg; dt = dtf, nsteps = 3_000_000, kT = kt,
                       seed = 33, measure_interval = 40, observables = obs,
                       thermostat = SD.QuantumThermostat())
-        st = equilibrium_stats(res; evaluables = Evaluable[])
+        st = equilibrium_stats(result; evaluables = Evaluable[])
         pred = _qt_predict_dimer(kt, dtf, J, Bz, mu, 2.0, alpha,
                                  _qt_shipped_psd(kt, dtf))
         m12 = 1.0 - st[:e12].mean[1]
@@ -474,10 +474,10 @@ end
         up = SVector(0.0, 0.0, 1.0)
         cfg = MC.SpinConfig([up for _ = 1:MC.n_sites(H)])
         obs = [Observable(:e, 1, v -> v.energy)]
-        res = run_llg(prob, cfg; dt = dtf, nsteps = 1_000_000, kT = kt,
+        result = run_llg(prob, cfg; dt = dtf, nsteps = 1_000_000, kT = kt,
                       seed = 8, measure_interval = 20, observables = obs,
                       thermostat = SD.QuantumThermostat())
-        st = equilibrium_stats(res; evaluables = Evaluable[])[:e]
+        st = equilibrium_stats(result; evaluables = Evaluable[])[:e]
         E_q = st.mean[1] - E0
         q_err = st.err[1]
         pred = _qt_predict_dimer(kt, dtf, J, 0.0, mu, 2.0, alpha,
@@ -516,14 +516,14 @@ end
                         end) for m = 0:2]
         mi = 15
         nt = 131_072 + 2_000                       # 2¹⁷ analysis frames + burn-in
-        res = run_llg(prob, cfg; dt = dtf, nsteps = mi * (nt - 1), kT = kt,
+        result = run_llg(prob, cfg; dt = dtf, nsteps = mi * (nt - 1), kT = kt,
                       seed = 27, measure_interval = mi,
                       observables = vcat(mode_obs, [trajectory_observable(H)]),
                       thermostat = SD.QuantumThermostat())
         pred = _qt_predict_ring(kt, dtf, J, Bz, mu, 2.0, alpha, 4,
                                 _qt_shipped_psd(kt, dtf))
-        st = equilibrium_stats(res; discard = 2_000, evaluables = Evaluable[])
-        r = structure_factor(res, H, _dimer_crystal(),
+        st = equilibrium_stats(result; discard = 2_000, evaluables = Evaluable[])
+        r = structure_factor(result, H, _dimer_crystal(),
                              [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 2.0]];
                              window = :none, discard = 2_000)
         @test r.nfft == 131_072

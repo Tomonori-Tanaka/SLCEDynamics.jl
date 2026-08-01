@@ -27,48 +27,48 @@
         @test Ω > 0                                     # ferro: rotation about +s
         nsteps = 6000
         dt = 0.005
-        res = run_llg(prob, config0; dt = dt, nsteps = nsteps, renorm_interval = 0)
+        result = run_llg(prob, config0; dt = dt, nsteps = nsteps, renorm_interval = 0)
         t = nsteps * dt                                 # ≈ one period
         # rtol 1e-5 has ~2× margin over the O(dt²) error at this dt (the thinnest
         # gate in the suite) — if it ever trips, halve dt before suspecting physics
-        @test res.config[1] ≈ _analytic1(Ω, t) rtol = 1e-5
-        @test res.config[2] ≈ SVector(-1.0, -1.0, 1.0) .* _analytic1(Ω, t) rtol = 1e-5
+        @test result.config[1] ≈ _analytic1(Ω, t) rtol = 1e-5
+        @test result.config[2] ≈ SVector(-1.0, -1.0, 1.0) .* _analytic1(Ω, t) rtol = 1e-5
         # ...and the halve-dt diagnosis is built in: the same endpoint at dt/2
         # must sit ≳3× closer to the closed form (O(dt²) ⇒ ~4×), so a trip above
         # self-separates "resolution" from "physics" without re-deriving anything
         res2 = run_llg(prob, config0; dt = dt / 2, nsteps = 2 * nsteps,
                        renorm_interval = 0)
-        err1 = norm(res.config[1] - _analytic1(Ω, t))
+        err1 = norm(result.config[1] - _analytic1(Ω, t))
         err2 = norm(res2.config[1] - _analytic1(Ω, t))
         @test err2 < err1 / 3
         # invariants: total spin, angle, energy (conserved to integrator order)
-        s_end = res.config[1] + res.config[2]
+        s_end = result.config[1] + result.config[2]
         @test s_end ≈ SVector(0.0, 0.0, szlen) atol = 1e-6
-        @test dot(res.config[1], res.config[2]) ≈ dot(e1, e2) atol = 1e-6
-        @test res.energies[end] ≈ res.energies[1] atol = 1e-7
+        @test dot(result.config[1], result.config[2]) ≈ dot(e1, e2) atol = 1e-6
+        @test result.energies[end] ≈ result.energies[1] atol = 1e-7
     end
 
     @testset "magmom = 2 → 4 halves the frequency" begin
         prob4 = LLGProblem(H; magmom = 4.0)
         Ω4 = _omega_z(4.0)
         @test Ω4 ≈ _omega_z(2.0) / 2
-        res = run_llg(prob4, config0; dt = 0.005, nsteps = 6000)
-        @test res.config[1] ≈ _analytic1(Ω4, 6000 * 0.005) rtol = 1e-5
+        result = run_llg(prob4, config0; dt = 0.005, nsteps = 6000)
+        @test result.config[1] ≈ _analytic1(Ω4, 6000 * 0.005) rtol = 1e-5
     end
 
     @testset "uniform B_ext ∥ s adds the Larmor rate" begin
         B = 5.0
         prob = LLGProblem(H; magmom = 2.0, b_ext = (0.0, 0.0, B))
         Ω = _omega_z(2.0) + _larmor_omega(2.0, B)
-        res = run_llg(prob, config0; dt = 0.005, nsteps = 6000)
-        @test res.config[1] ≈ _analytic1(Ω, 6000 * 0.005) rtol = 1e-5
+        result = run_llg(prob, config0; dt = 0.005, nsteps = 6000)
+        @test result.config[1] ≈ _analytic1(Ω, 6000 * 0.005) rtol = 1e-5
     end
 
     @testset "α > 0 relaxes toward alignment (ferro ground state)" begin
         prob = LLGProblem(H; magmom = 2.0, alpha = 1.0)
-        res = run_llg(prob, config0; dt = 0.1, nsteps = 4000)
-        @test dot(res.config[1], res.config[2]) > 0.999   # e₁·e₂ → 1
-        @test res.energies[end] < res.energies[1]
-        @test res.energies[end] ≈ J atol = 1e-4           # E → J at alignment
+        result = run_llg(prob, config0; dt = 0.1, nsteps = 4000)
+        @test dot(result.config[1], result.config[2]) > 0.999   # e₁·e₂ → 1
+        @test result.energies[end] < result.energies[1]
+        @test result.energies[end] ≈ J atol = 1e-4           # E → J at alignment
     end
 end

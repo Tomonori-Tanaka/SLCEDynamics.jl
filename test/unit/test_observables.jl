@@ -54,15 +54,15 @@
         # count are wrong by the ratio of the two, silently.
         nm = 200
         series = Dict(:x => reshape(collect(1.0:nm), 1, nm))
-        res = SD.LLGResult(collect(1.0:nm), zeros(nm),
+        result = SD.LLGResult(collect(1.0:nm), zeros(nm),
                            fill(SVector{3,Float64}(0, 0, 1), nm), series,
                            config0, nm, 0.01, 1, 0.05, UInt64(7),
                            10, 4,                       # n_active, n_spin_active
                            "cpu", "classical")
-        @test res.n_active != res.n_spin_active         # teeth: the two must differ
+        @test result.n_active != result.n_spin_active         # teeth: the two must differ
         evs = [Evaluable(:n_spin, [:x], (m, kT, n) -> float(n)),
                Evaluable(:n_energy, [:x], (m, kT, n) -> float(n); scope = :energy)]
-        st = equilibrium_stats(res; evaluables = evs, discard = 0, nbins = 4)
+        st = equilibrium_stats(result; evaluables = evs, discard = 0, nbins = 4)
         @test st[:n_spin].mean[1] == 4.0
         @test st[:n_energy].mean[1] == 10.0
     end

@@ -290,28 +290,28 @@ end
         sections = [SD._Biquad(0.8, 0.3, -0.1, -0.5, 0.06),
                     SD._Biquad(1.1, -0.2, 0.05, -0.9, 0.25)]
         Anb, Bnb, _, _ = SD._filter_state_space(sections)
-        filt = SD.ColoredNoiseFilter(sections,
+        noise_filter = SD.ColoredNoiseFilter(sections,
             SD._stationary_sqrt(SD._stationary_cov(Anb, Bnb)))
         n = MC.n_sites(H)
         x = reshape(collect(1.0:(12.0 * n)), 12, n)
-        fstate = SD._FilterState(filt, x)
-        spec = SD._RunSpec(prob, DepondtMertens(), 0.02, 10, 7, 100, 0.02,
+        fstate = SD._FilterState(noise_filter, x)
+        run_spec = SD._RunSpec(prob, DepondtMertens(), 0.02, 10, 7, 100, 0.02,
                            UInt64(5), obs, :cpu, "", 0,
                            SD.QuantumThermostat())
-        tr = SD._make_trace(spec)
-        tr.k = 1
-        SD._measure!(tr.energies, tr.means, tr.series, obs, 1, 0.0, tr.times,
+        trace = SD._make_trace(run_spec)
+        trace.k = 1
+        SD._measure!(trace.energies, trace.means, trace.series, obs, 1, 0.0, trace.times,
                      prob, c0)
         rpath = joinpath(dir, "qt_roundtrip.jld2")
-        ck = SD._make_llg_checkpointer(rpath, 0, prob)
-        SD._write_ckpt_llg(ck, spec, c0, tr, 7, fstate)
+        checkpointer = SD._make_llg_checkpointer(rpath, 0, prob)
+        SD._write_ckpt_llg(checkpointer, run_spec, c0, trace, 7, fstate)
         data = SD._read_llg_ckpt(rpath, prob, obs)
         @test data.thermostat == "quantum"
         @test data.filter_id == SD._QT_FILTER_ID
-        @test data.filter_coeffs == SD._filter_coeffs(filt)
+        @test data.filter_coeffs == SD._filter_coeffs(noise_filter)
         @test data.filter_state == x
         filt2 = SD._filter_from_coeffs(data.filter_coeffs)
-        @test filt2.sections == filt.sections
+        @test filt2.sections == noise_filter.sections
         @test SD._filter_state_verbatim(data.filter_state, 12, n) == x
         # dimension guards
         @test_throws ErrorException SD._filter_state_verbatim(x, 6, n)

@@ -77,12 +77,12 @@ _iw(kp::Int, M::Int) = kp + (M >>> 1) + 1
             rcart = cartesian_positions(sup)
             n = MC.n_sites(H2)
             L = length(tr2.times)
-            ebar = [sum(tr2.traj[α, s, j] for j = 1:L) / L for α = 1:3, s = 1:n]
+            spin_means = [sum(tr2.traj[α, s, j] for j = 1:L) / L for α = 1:3, s = 1:n]
             for (iq, q) in enumerate(qs2)
                 qc = SD._q_cartesian(cr2, SVector{3,Float64}(q))
                 for α = 1:3
                     sqt = [sum(cis(-dot(qc, @view rcart[:, s])) *
-                               (tr2.traj[α, s, j] - ebar[α, s]) for s = 1:n) /
+                               (tr2.traj[α, s, j] - spin_means[α, s]) for s = 1:n) /
                            sqrt(n) for j = 1:M]
                     lhs = sum(real(r.S[α, α, iq, iw]) for iw = 1:M) /
                           (M * r.dt_meas)
@@ -153,7 +153,7 @@ _iw(kp::Int, M::Int) = kp + (M >>> 1) + 1
 
     # The recorded series is an ON-DISK format promise: a checkpoint written by an older
     # version is read by a newer one. Nothing else pins its layout as a literal — the
-    # file round-trip (`structure_factor(path,…) == structure_factor(res,…)` below) moves
+    # file round-trip (`structure_factor(path,…) == structure_factor(result,…)` below) moves
     # writer and reader together, so it passes unchanged if the layout is transposed, and
     # the analytic S(q,ω) gates catch a reordering only indirectly. Assert the layout
     # against the CONFIGURATION itself: xyz fastest, then site.
