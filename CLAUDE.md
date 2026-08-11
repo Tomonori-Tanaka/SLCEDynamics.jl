@@ -103,9 +103,30 @@ equation, unit system, and the settled stochastic-LLG design.
   seed) and the checkpoint schema must grow to carry it (schema-version bump).
   The configuration is restored **verbatim** (`_config_verbatim`) — never
   `from_matrix`, whose renormalization ULP-perturbs chaotic trajectories (the
-  bug the crash-resume gate in `test_checkpoint.jl` caught). The model identity
+  bug the crash-resume gate in `test_checkpoint.jl` caught; verified by
+  mutation 2026-08-11 — a normalize there turns exactly the resume
+  bit-identity gates red, 39 tests, and nothing else). Restore still
+  VALIDATES active columns, through `SLCE.UnitVector3(…, Trusted())` — the
+  family's non-projecting door — so a corrupted `state/config` is refused
+  loudly; that refusal cannot fork a viable trajectory (an off-band or
+  `|z| > 1` stored column is one the uninterrupted run would have killed at
+  its next gradient evaluation). The model identity
   is `SLCEMonteCarlo.model_fingerprint` (upstream public facade — its mixing is
   part of this file format too).
+- **`config0` entry door ↔ SLCE's unit-direction rule ↔ the GPU composite
+  reference** (`run.jl` `_config_projected` ↔ SLCE `direction.jl`
+  `UnitVector3` ↔ `test_gpu_llg.jl` `_ref_gpu_loop`): both drivers share ONE
+  validate-then-project door for `config0` — active columns through the
+  projecting `UnitVector3` (finite, `1e-6` band, component bound of the
+  projected value), inactive placeholders verbatim. The old local `< 1e-8`
+  band without projection was the audited live bug (a near-pole column `5e-9`
+  off unit → bare `DomainError` from `dnPl` inside the first gradient
+  evaluation), duplicated verbatim in `gpu/run.jl`. Because entry projection
+  is bit-non-neutral (~38 % of already-unit columns move by ≤ 4.4e-16), an
+  independent bitwise test reference must start from the DOOR-PROJECTED
+  config, not the raw fixture — `_ref_gpu_loop` (a3) does. The restore-side
+  twin is `_config_verbatim` (previous bullet), which validates without
+  projecting — never swap the two doors.
 - **GPU stage kernels ↔ the host `_omega`/`_rotate`/`_fill_noise!`/
   `_renormalize_active!` ↔ the composite keyed reference** (`src/gpu/kernels.jl`
   ↔ `integrators.jl`/`noise.jl` ↔ `test_gpu_llg.jl`'s `_ref_gpu_step!`): the

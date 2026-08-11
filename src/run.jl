@@ -101,6 +101,26 @@ function _make_trace(run_spec::_RunSpec)::_Trace
                       for o in run_spec.observables), 0)
 end
 
+# The PUBLIC entry door for a starting configuration, shared by `run_llg` and
+# `gpu_run_llg`: each active column passes SLCE's projecting unit-direction rule
+# (finite, `|‖e‖ − 1| ≤ 1e-6`, component bound of the projected value) and comes
+# back exactly on the sphere. The old local check (`< 1e-8`, no projection, no
+# component bound) let a near-pole column `5e-9` off unit through the band and
+# into a bare `DomainError` from `LegendrePolynomials.dnPl` inside the first
+# gradient evaluation. Inactive sites are unvalidated placeholders (the resume
+# comparison and the frozen-spin gates rely on them passing through bitwise).
+# Its restore-side twin is `_config_verbatim` (checkpoint.jl), which validates
+# WITHOUT projecting — see the Trusted-door note there.
+function _config_projected(config0::SpinConfig, active::Vector{Bool})::SpinConfig
+    config = copy(config0)
+    for s in eachindex(config)
+        active[s] || continue
+        u = UnitVector3(config[s]; what = "config0[$s]")
+        config[s] = SVector{3,Float64}(u[1], u[2], u[3])
+    end
+    return config
+end
+
 """
     run_llg(prob::LLGProblem, config0::SpinConfig; dt, nsteps,
             integrator = DepondtMertens(), observables = Observable[],
@@ -112,7 +132,15 @@ end
 
 Integrate the LLG for `nsteps` fixed steps of `dt` [fs] from `config0` (unit
 vectors; not mutated) — deterministic (`T = 0`) by default, **stochastic LLG**
-when a temperature is given. Observables are recorded at step 0, every
+when a temperature is given.
+
+Each active column of `config0` passes the family's unit-direction door
+(`SLCE.UnitVector3`): it must be finite, within `1e-6` of unit norm, and is then
+projected exactly onto the sphere before the first step — so a direction carrying
+float noise (a rounded file, an off-by-`5e-9` near-pole column that would
+otherwise throw a `DomainError` from inside the gradient's Legendre recursion) is
+repaired at the door instead of failing mid-run. Inactive sites' entries are
+unvalidated placeholders and pass through verbatim (they stay bitwise frozen). Observables are recorded at step 0, every
 `measure_interval` steps, and always at the final step (so the last measurement
 matches the returned `config` exactly).
 
@@ -188,13 +216,7 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
         throw(ArgumentError("renorm_interval must be ≥ 0; got $renorm_interval"))
     allunique(o.name for o in observables) ||
         throw(ArgumentError("observable names must be unique"))
-    for s = 1:n
-        H.site_active[s] || continue
-        abs(norm(config0[s]) - 1) < 1e-8 || throw(ArgumentError(
-            "config0[$s] is not a unit vector (|e| = $(norm(config0[s])))"))
-    end
-
-    config = copy(config0)
+    config = _config_projected(config0, H.site_active)
     dtf = Float64(dt)
     ns = Int(nsteps)
     mi = Int(measure_interval)

@@ -196,6 +196,17 @@ end
                                           checkpoint_interval = -1)
         @test_throws ArgumentError resume(path, prob; observables = obs,
                                           ntasks = 0)
+        # a corrupted stored configuration is refused by the verbatim door
+        # (validated WITHOUT projecting — restore must never repair silently)
+        cpath = joinpath(dir, "corrupt.jld2")
+        cp(path, cpath)
+        jldopen(cpath, "r+") do f
+            m = f["state/config"]
+            delete!(f, "state/config")
+            m[:, 1] .*= 2.5
+            f["state/config"] = m
+        end
+        @test_throws ArgumentError resume(cpath, prob; observables = obs)
     end
 
     @testset "quantum thermostat (schema v3)" begin

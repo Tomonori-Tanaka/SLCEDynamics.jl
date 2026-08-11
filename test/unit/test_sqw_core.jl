@@ -160,18 +160,20 @@ _iw(kp::Int, M::Int) = kp + (M >>> 1) + 1
     @testset "series layout is xyz-fastest-then-site (stored-file contract)" begin
         # The measurement grid includes step 0, so `nsteps == measure_interval` gives
         # exactly two columns whose contents are known independently of the writer: the
-        # initial configuration and the returned one.
+        # initial configuration (door-projected — the state the run starts from)
+        # and the returned one.
         r0 = run_llg(prob2, c0; dt = 0.05, nsteps = 5, kT = 0.02, seed = 1,
                      measure_interval = 5, observables = [trajectory_observable(H2)])
+        c0p = SD._config_projected(c0, H2.site_active)
         ser = r0.series[:spins]
         @test size(ser) == (3 * MC.n_sites(H2), 2)
         @test r0.times == [0.0, 5 * 0.05]
-        @test ser[:, 1] == vec(MC.to_matrix(c0))
+        @test ser[:, 1] == vec(MC.to_matrix(c0p))
         @test ser[:, end] == vec(MC.to_matrix(r0.config))
         @test ser[:, 1] != ser[:, end]          # the run moved, so this is not vacuous
         # spelled out, so a transpose cannot satisfy it by coincidence
         for s = 1:min(3, MC.n_sites(H2)), k = 1:3
-            @test ser[3*(s-1)+k, 1] == c0[s][k]
+            @test ser[3*(s-1)+k, 1] == c0p[s][k]
         end
     end
 

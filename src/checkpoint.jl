@@ -50,11 +50,25 @@ end
 # Bitwise configuration restore. Deliberately NOT `SLCEMonteCarlo.from_matrix`,
 # which renormalizes each column: an ULP-level perturbation of the state forks a
 # chaotic trajectory, and resume must be bit-identical to the uninterrupted run.
-function _config_verbatim(m::Matrix{Float64}, n::Int)::SpinConfig
+# Active columns are still VALIDATED — through the family's non-projecting door
+# (`UnitVector3(…, Trusted())`), so a corrupted or hand-edited file fails loudly
+# here instead of integrating garbage. That door's refusal cannot fork a viable
+# trajectory: a stored active column it rejects (off the 1e-6 band, or a
+# component past 1) is one the uninterrupted run would have killed at its next
+# gradient evaluation anyway (`dnPl`'s domain is `|z| ≤ 1`, and Depondt drift
+# between renorms is ~ε√renorm_interval ≪ 1e-6). Inactive columns are
+# unvalidated placeholders at entry and stay unvalidated here.
+function _config_verbatim(m::Matrix{Float64}, n::Int,
+                          active::Vector{Bool})::SpinConfig
     size(m) == (3, n) || error("checkpoint config is $(size(m, 1)) × " *
                                "$(size(m, 2)); expected 3 × $n")
-    return SpinConfig([SVector{3,Float64}(m[1, s], m[2, s], m[3, s])
-                       for s = 1:n])
+    config = SpinConfig([SVector{3,Float64}(m[1, s], m[2, s], m[3, s])
+                        for s = 1:n])
+    for s = 1:n
+        active[s] || continue
+        UnitVector3(config[s], Trusted(); what = "checkpoint config, site $s")
+    end
+    return config
 end
 
 function _write_ckpt_llg(checkpointer::_LLGCheckpointer, run_spec::_RunSpec, config::SpinConfig,
@@ -191,7 +205,8 @@ function _read_llg_ckpt(path::AbstractString, prob::LLGProblem,
          filter_state = ver >= 3 && f["run/thermostat"] == "quantum" ?
                         f["state/filter"]::Matrix{Float64} : zeros(0, 0),
          step = f["progress/step"]::Int, k = f["progress/nmeas"]::Int,
-         config = _config_verbatim(f["state/config"]::Matrix{Float64}, n),
+         config = _config_verbatim(f["state/config"]::Matrix{Float64}, n,
+                                   H.site_active),
          times = f["trace/times"]::Vector{Float64},
          energies = f["trace/energies"]::Vector{Float64},
          means = f["trace/mean_spins"]::Matrix{Float64},

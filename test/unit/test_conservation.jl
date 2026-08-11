@@ -76,6 +76,26 @@
         bad = copy(config0)
         bad[1] = SVector(2.0, 0.0, 0.0)
         @test_throws ArgumentError run_llg(prob0, bad; dt = 0.1, nsteps = 1)
+        # the audited live bug (2026-08-01 #1, rank 2): a near-pole column 5e-9
+        # off unit cleared the old `< 1e-8` band UNPROJECTED and threw a bare
+        # DomainError from LegendrePolynomials.dnPl (domain |z| ≤ 1) inside the
+        # first gradient evaluation. The door now projects it onto the sphere.
+        pole = copy(config0)
+        pole[1] = SVector(0.0, 0.0, 1.0 + 5.0e-9)
+        rp = run_llg(prob0, pole; dt = 0.1, nsteps = 5)
+        @test all(isfinite(c) for e in rp.config for c in e)
+        # the family band is 1e-6 (was 1e-8): a rounded-decimal direction is a
+        # file format, not a bug — accepted and projected; past the band refuses
+        off = copy(config0)
+        off[1] = (1.0 + 1.0e-7) * config0[1]
+        @test run_llg(prob0, off; dt = 0.1, nsteps = 0).config ==
+              SD._config_projected(off, H.site_active)
+        far = copy(config0)
+        far[1] = (1.0 + 1.0e-5) * config0[1]
+        @test_throws ArgumentError run_llg(prob0, far; dt = 0.1, nsteps = 0)
+        nf = copy(config0)
+        nf[1] = SVector(NaN, 0.0, 0.0)
+        @test_throws ArgumentError run_llg(prob0, nf; dt = 0.1, nsteps = 1)
         # the final step is ALWAYS measured, on-grid or not
         r = run_llg(prob0, config0; dt = 0.5, nsteps = 25, measure_interval = 10)
         @test r.times == [0.0, 5.0, 10.0, 12.5]          # steps 0, 10, 20, 25
@@ -84,10 +104,14 @@
         rg = run_llg(prob0, config0; dt = 0.5, nsteps = 20, measure_interval = 10)
         @test rg.times == [0.0, 5.0, 10.0]               # on-grid: no duplicate
         @test rg.energies[end] == total_energy(prob0, rg.config)
-        # nsteps = 0: a single measurement of the initial state
+        # nsteps = 0: a single measurement of the initial state — which is the
+        # door-projected config0, not the raw argument (the entry door projects
+        # every active column exactly onto the sphere)
         r0 = run_llg(prob0, config0; dt = 0.5, nsteps = 0)
-        @test r0.times == [0.0] && r0.config == config0
-        @test r0.energies[1] == total_energy(prob0, config0)
+        @test r0.times == [0.0]
+        @test r0.config == SD._config_projected(config0, H.site_active)
+        @test all(abs(norm(e) - 1) < 4 * eps() for e in r0.config)
+        @test r0.energies[1] == total_energy(prob0, r0.config)
         @test occursin("LLGResult", sprint(show, r))
     end
 end

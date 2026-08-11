@@ -15,7 +15,9 @@
 [`run_llg`](@ref) on a KernelAbstractions device: the same physics, observables
 (host-evaluated on a per-measurement snapshot — the identical `Observable`
 contract and `LLGResult` semantics, so `equilibrium_stats` / `structure_factor`
-/ checkpointing consume the result unchanged), and stateless Philox noise
+/ checkpointing consume the result unchanged), the same `config0` entry door
+(active columns validated and projected onto the sphere — see [`run_llg`](@ref)),
+and stateless Philox noise
 stream (same `(seed, site, step)` draws as the CPU path — a same-seed CPU and
 GPU run are the same stochastic realization, differing only through
 gradient/rotation roundoff).
@@ -63,11 +65,8 @@ function gpu_run_llg(prob::LLGProblem, config0::SpinConfig, gH;
     ispow2(ws) || throw(ArgumentError("workgroupsize must be a power of two (got $ws)"))
     allunique(o.name for o in observables) ||
         throw(ArgumentError("observable names must be unique"))
-    for s = 1:n
-        H.site_active[s] || continue
-        abs(norm(config0[s]) - 1) < 1e-8 || throw(ArgumentError(
-            "config0[$s] is not a unit vector (|e| = $(norm(config0[s])))"))
-    end
+    # the same entry door as run_llg — validate-then-project the active columns
+    config = _config_projected(config0, H.site_active)
     dtf = Float64(dt)
     ns = Int(nsteps)
     mi = Int(measure_interval)
@@ -103,10 +102,10 @@ function gpu_run_llg(prob::LLGProblem, config0::SpinConfig, gH;
                     thermostat)
     checkpointer = _make_llg_checkpointer(checkpoint, checkpoint_interval, prob)
     sigma = thermo ? _sigma_noise(prob, kt, dtf) : zeros(n)
-    st = GPULLGState(gH, prob, config0, sigma, fstate)
+    st = GPULLGState(gH, prob, config, sigma, fstate)
     trace = _make_trace(run_spec)
     trace.k = 1
-    copyto!(st.h_config, config0)
+    copyto!(st.h_config, config)
     _measure!(trace.energies, trace.means, trace.series, observables, 1, 0.0, trace.times,
               prob, st.h_config)
     return _llg_loop_gpu!(run_spec, st, gH, trace, 0, checkpointer, fstate)

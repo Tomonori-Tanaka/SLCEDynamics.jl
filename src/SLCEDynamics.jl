@@ -28,6 +28,7 @@ using LinearAlgebra: I, kron, cholesky, Symmetric
 using StaticArrays
 using Statistics: mean
 using SLCE: Crystal, n_atoms
+using SLCE: UnitVector3, Trusted     # the family's unit-direction doors (validate/project)
 using SLCEMonteCarlo: SLCEMonteCarlo, TiledHamiltonian, n_sites, Observable
 using SLCEMonteCarlo: SpinConfig, site_atom, energy_gradient!
 using SLCE: resolve_kt                 # the family's kelvin ↔ model-energy convention

@@ -127,13 +127,16 @@ end
                                  integrator = integ, measure_interval = 3,
                                  workgroupsize = ws)
             @test det.compute == "gpu:cpu"
-            refc = _ref_gpu_loop(prob, H, c0, 0.05, 7, ws, integ)
+            # the reference tests the LOOP arithmetic, so it starts from the
+            # state the loop actually starts from — the door-projected config
+            c0p = SD._config_projected(c0, H.site_active)
+            refc = _ref_gpu_loop(prob, H, c0p, 0.05, 7, ws, integ)
             @test det.config == refc
 
             th = SD.gpu_run_llg(prob, c0, gH; dt = 0.05, nsteps = 7,
                                 integrator = integ, measure_interval = 3,
                                 workgroupsize = ws, kT = 0.02, seed = 9)
-            refc2 = _ref_gpu_loop(prob, H, c0, 0.05, 7, ws, integ;
+            refc2 = _ref_gpu_loop(prob, H, c0p, 0.05, 7, ws, integ;
                                   kt = 0.02, seed = UInt64(9))
             @test th.config == refc2
         end
@@ -364,5 +367,15 @@ end
         gH2 = MC.GPUTiledHamiltonian(CPU(), H2)
         @test_throws ArgumentError SD.gpu_run_llg(probd, c0d, gH2; dt = 0.05,
                                                   nsteps = 1)
+        # the same config0 entry door as run_llg (refuse off-band, project
+        # the near-pole 5e-9 case that used to DomainError mid-run)
+        bad = copy(c0d)
+        bad[1] = SVector(2.0, 0.0, 0.0)
+        @test_throws ArgumentError SD.gpu_run_llg(probd, bad, gHd; dt = 0.05,
+                                                  nsteps = 1)
+        pole = copy(c0d)
+        pole[1] = SVector(0.0, 0.0, 1.0 + 5.0e-9)
+        rp = SD.gpu_run_llg(probd, pole, gHd; dt = 0.05, nsteps = 2)
+        @test all(isfinite(c) for e in rp.config for c in e)
     end
 end

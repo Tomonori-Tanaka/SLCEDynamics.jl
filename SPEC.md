@@ -117,8 +117,10 @@ the measurements recorded so far.
 `resume(path, prob; observables, nsteps, …)` — a method of
 `SLCEMonteCarlo.resume` — validates everything, restores the configuration
 **verbatim** (never through `from_matrix`, whose renormalization would perturb a
-chaotic trajectory by ULPs), and continues the shared loop: bit-identical to the
-uninterrupted run. A completed file reconstructs its `LLGResult` without
+chaotic trajectory by ULPs; active columns are still *validated*, through
+`SLCE.UnitVector3(…, Trusted())` — the family's non-projecting door — so a
+corrupted file fails loudly instead of integrating garbage), and continues the
+shared loop: bit-identical to the uninterrupted run. A completed file reconstructs its `LLGResult` without
 stepping (idempotent in retry loops). Since every per-step effect is keyed by
 the absolute step index, `nsteps` may also *extend* the run — bit-identical to a
 single longer run — refused only when a completed run's off-grid final

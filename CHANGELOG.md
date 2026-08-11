@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — `config0` enters through the family's unit-direction door
+
+**Breaking for bit-level trajectory comparisons.** `run_llg` and `gpu_run_llg`
+now pass every *active* column of `config0` through `SLCE.UnitVector3` — the
+family's projecting door: finite components, `|‖e‖ − 1| ≤ 1e-6` (was a local
+`< 1e-8`), the component bound `max|component| ≤ 1` asked of the projected
+value, and then **exact projection onto the sphere** before the first step.
+This fixes a live defect (audit 2026-08-01 #1, rank 2): a near-pole column
+`5e-9` off unit cleared the old band unprojected and threw a bare `DomainError`
+from `LegendrePolynomials.dnPl` (domain `|z| ≤ 1`) inside the first gradient
+evaluation, in both drivers (the check was a verbatim duplicate; it is now one
+shared door, `_config_projected`). Costs and non-costs:
+
+- **Trajectories from the same `config0` can differ from pre-change runs by the
+  entry projection**: `v/‖v‖` is not bitwise idempotent (~38 % of already-unit
+  columns move by ≤ 4.4e-16), and LLG is chaotic. Statistical results are
+  unaffected; recorded bit-level pins that start from a raw `config0` must be
+  recaptured. Within-suite gates (resume ≡ uninterrupted, determinism, CPU/GPU
+  references) all pass through the same door and stay bit-consistent.
+- A rounded-decimal direction (e.g. a 4-decimal MAGMOM, ~2e-5 off unit) is
+  still refused — the band is `1e-6`; past it, normalize deliberately in your
+  own code.
+- Inactive sites' entries stay **unvalidated placeholders** and pass through
+  bitwise (the frozen-spin and resume contracts rely on this).
+- `LLGResult.config` of an `nsteps = 0` run is the door-projected state, not
+  the raw argument.
+
+Checkpoint restore is the other half and does NOT project: `_config_verbatim`
+now validates active columns through `SLCE.UnitVector3(…, Trusted())` — the
+non-projecting door — so a corrupted or hand-edited `state/config` is refused
+loudly instead of integrating garbage, while a legitimate file is restored
+bit-exactly (resume bit-identity gates unchanged; the Trusted refusal can only
+fire on states the uninterrupted run would have killed at its next gradient
+evaluation anyway).
+
 ### Fixed — the quantum thermostat's stationary initialization was wrong by up to +325 %
 
 **Breaking for seeded quantum trajectories**: `L` changes, so a `QuantumThermostat`
