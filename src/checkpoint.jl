@@ -56,16 +56,16 @@ end
 # trajectory: a stored active column it rejects (off the 1e-6 band, or a
 # component past 1) is one the uninterrupted run would have killed at its next
 # gradient evaluation anyway (`dnPl`'s domain is `|z| ≤ 1`, and Depondt drift
-# between renorms is ~ε√renorm_interval ≪ 1e-6). Inactive columns are
-# unvalidated placeholders at entry and stay unvalidated here.
-function _config_verbatim(m::Matrix{Float64}, n::Int,
-                          active::Vector{Bool})::SpinConfig
+# between renorms is ~ε√renorm_interval ≪ 1e-6). ALL columns are validated,
+# inactive included (review 2026-08-11): the entry door validates them too — the
+# harmonic kernels evaluate every site — so an out-of-domain inactive column
+# here is corruption, not a legal placeholder.
+function _config_verbatim(m::Matrix{Float64}, n::Int)::SpinConfig
     size(m) == (3, n) || error("checkpoint config is $(size(m, 1)) × " *
                                "$(size(m, 2)); expected 3 × $n")
     config = SpinConfig([SVector{3,Float64}(m[1, s], m[2, s], m[3, s])
                         for s = 1:n])
     for s = 1:n
-        active[s] || continue
         UnitVector3(config[s], Trusted(); what = "checkpoint config, site $s")
     end
     return config
@@ -177,7 +177,7 @@ function _read_llg_ckpt(path::AbstractString, prob::LLGProblem,
             "checkpoint has $(length(mm)) sites; the Hamiltonian has $n")
         # inactive entries are unvalidated placeholders — compare active only
         (SVector{3,Float64}(bx) == prob.b_ext &&
-         all(!H.site_active[s] || (mm[s] == prob.magmom[s] &&
+         all(!H.site_has_spin[s] || (mm[s] == prob.magmom[s] &&
                                    al[s] == prob.alpha[s] &&
                                    gf[s] == prob.g[s]) for s = 1:n)) || error(
             "the supplied LLGProblem's parameters (magmom/alpha/g/b_ext) do " *
@@ -205,8 +205,7 @@ function _read_llg_ckpt(path::AbstractString, prob::LLGProblem,
          filter_state = ver >= 3 && f["run/thermostat"] == "quantum" ?
                         f["state/filter"]::Matrix{Float64} : zeros(0, 0),
          step = f["progress/step"]::Int, k = f["progress/nmeas"]::Int,
-         config = _config_verbatim(f["state/config"]::Matrix{Float64}, n,
-                                   H.site_active),
+         config = _config_verbatim(f["state/config"]::Matrix{Float64}, n),
          times = f["trace/times"]::Vector{Float64},
          energies = f["trace/energies"]::Vector{Float64},
          means = f["trace/mean_spins"]::Matrix{Float64},

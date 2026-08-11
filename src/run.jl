@@ -16,7 +16,10 @@ Fields:
   `times`,
 - `config` — the final configuration, plus the run parameters. For a
   thermostatted run, `kT` [eV] and the `seed` are recorded (`kT = NaN`,
-  `seed = 0` for a deterministic run); `n_active` is the active-site count and
+  `seed = 0` for a deterministic run); `b_ext` [T] is the problem's uniform
+  external field — [`equilibrium_stats`](@ref) needs it because the recorded
+  `:energy` observable series is the SLCE energy alone, which at `b_ext ≠ 0` is
+  not the energy the Boltzmann weight uses; `n_active` is the active-site count and
   `n_spin_active` the magnetic-site count — an `Evaluable`'s `scope` picks which
   one it is normalized by in [`equilibrium_stats`](@ref), and the two differ
   exactly when a joint spin–lattice Hamiltonian carries displacement-only sites;
@@ -38,6 +41,7 @@ struct LLGResult
     measure_interval::Int
     kT::Float64
     seed::UInt64
+    b_ext::SVector{3,Float64}
     n_active::Int
     n_spin_active::Int
     compute::String
@@ -107,16 +111,24 @@ end
 # back exactly on the sphere. The old local check (`< 1e-8`, no projection, no
 # component bound) let a near-pole column `5e-9` off unit through the band and
 # into a bare `DomainError` from `LegendrePolynomials.dnPl` inside the first
-# gradient evaluation. Inactive sites are unvalidated placeholders (the resume
-# comparison and the frozen-spin gates rely on them passing through bitwise).
+# gradient evaluation. Inactive sites pass through BITWISE (the resume comparison
+# and the frozen-spin gates rely on it) but are still validated, non-projecting:
+# the energy path (`SLCEMonteCarlo.total_energy` → `_zlm_row!`) evaluates the
+# harmonic kernels at EVERY site, so an inactive placeholder with a component
+# outside [-1, 1] died as a bare Legendre `DomainError` naming nothing — the exact
+# failure shape this door exists to eliminate, surviving on the inactive path
+# (review 2026-08-11; MC's own door validates all columns for the same reason).
 # Its restore-side twin is `_config_verbatim` (checkpoint.jl), which validates
 # WITHOUT projecting — see the Trusted-door note there.
 function _config_projected(config0::SpinConfig, active::Vector{Bool})::SpinConfig
     config = copy(config0)
     for s in eachindex(config)
-        active[s] || continue
-        u = UnitVector3(config[s]; what = "config0[$s]")
-        config[s] = SVector{3,Float64}(u[1], u[2], u[3])
+        if active[s]
+            u = UnitVector3(config[s]; what = "config0[$s]")
+            config[s] = SVector{3,Float64}(u[1], u[2], u[3])
+        else
+            UnitVector3(config[s], Trusted(); what = "config0[$s] (inactive site)")
+        end
     end
     return config
 end
@@ -216,7 +228,7 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
         throw(ArgumentError("renorm_interval must be ≥ 0; got $renorm_interval"))
     allunique(o.name for o in observables) ||
         throw(ArgumentError("observable names must be unique"))
-    config = _config_projected(config0, H.site_active)
+    config = _config_projected(config0, H.site_has_spin)
     dtf = Float64(dt)
     ns = Int(nsteps)
     mi = Int(measure_interval)
@@ -230,7 +242,7 @@ function run_llg(prob::LLGProblem, config0::SpinConfig; dt::Real, nsteps::Intege
             "run_llg takes a single temperature; got $(length(kts))"))
         kt = kts[1]
         for s = 1:n
-            H.site_active[s] || continue
+            H.site_has_spin[s] || continue
             prob.alpha[s] > 0 || throw(ArgumentError(
                 "stochastic LLG needs α > 0 on every active site (site $s has " *
                 "α = 0) — the thermal noise scales with the damping"))
@@ -299,7 +311,8 @@ function _llg_loop!(run_spec::_RunSpec, config::SpinConfig, trace::_Trace, step0
     end
     _checkpoint_llg!(checkpointer, run_spec, config, trace, ns, true, fstate)   # the completion write
     return LLGResult(trace.times, trace.energies, trace.means, trace.series, config, ns,
-                     run_spec.dt, mi, run_spec.kt, run_spec.seed, H.n_active, H.n_spin_active,
+                     run_spec.dt, mi, run_spec.kt, run_spec.seed, prob.b_ext,
+                     H.n_active, H.n_spin_active,
                      _compute_string(run_spec), _thermostat_string(run_spec.thermostat))
 end
 
@@ -343,7 +356,7 @@ function _mean_active(H::TiledHamiltonian, config::SpinConfig)::SVector{3,Float6
     acc = zero(SVector{3,Float64})
     na = 0
     @inbounds for s = 1:n_sites(H)
-        H.site_active[s] || continue
+        H.site_has_spin[s] || continue
         acc += config[s]
         na += 1
     end
@@ -352,7 +365,7 @@ end
 
 function _renormalize_active!(H::TiledHamiltonian, config::SpinConfig)::Nothing
     @inbounds for s = 1:n_sites(H)
-        H.site_active[s] || continue          # inactive spins stay bitwise frozen
+        H.site_has_spin[s] || continue          # inactive spins stay bitwise frozen
         config[s] = config[s] / norm(config[s])
     end
     return nothing

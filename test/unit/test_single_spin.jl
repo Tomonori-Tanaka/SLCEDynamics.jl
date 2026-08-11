@@ -84,4 +84,23 @@ end
         @test result.config[3] == e34                # no Zeeman on inactive sites
         @test result.config[4] == e34
     end
+
+    @testset "inactive config0 columns are validated at the door (review 2026-08-11)" begin
+        # The energy path evaluates the harmonic kernels at EVERY site, so an
+        # out-of-domain inactive placeholder used to die as a bare Legendre
+        # `DomainError` naming nothing (the audit-#1 failure shape, surviving on
+        # the inactive path). The door now refuses it by name, non-projecting —
+        # a valid inactive column still passes through bitwise (testset above).
+        prob = LLGProblem(H; magmom = 2.0)
+        bad = MC.SpinConfig([e0, e0, SVector(0.0, 0.0, 2.0), e0])
+        err = try
+            run_llg(prob, bad; dt = 1.0, nsteps = 1)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("config0[3]", err.msg)
+        @test occursin("inactive", err.msg)
+    end
 end

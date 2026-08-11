@@ -66,7 +66,7 @@ function gpu_run_llg(prob::LLGProblem, config0::SpinConfig, gH;
     allunique(o.name for o in observables) ||
         throw(ArgumentError("observable names must be unique"))
     # the same entry door as run_llg — validate-then-project the active columns
-    config = _config_projected(config0, H.site_active)
+    config = _config_projected(config0, H.site_has_spin)
     dtf = Float64(dt)
     ns = Int(nsteps)
     mi = Int(measure_interval)
@@ -78,7 +78,7 @@ function gpu_run_llg(prob::LLGProblem, config0::SpinConfig, gH;
             "gpu_run_llg takes a single temperature; got $(length(kts))"))
         kt = kts[1]
         for s = 1:n
-            H.site_active[s] || continue
+            H.site_has_spin[s] || continue
             prob.alpha[s] > 0 || throw(ArgumentError(
                 "stochastic LLG needs α > 0 on every active site (site $s has " *
                 "α = 0) — the thermal noise scales with the damping"))
@@ -166,8 +166,8 @@ function _llg_loop_gpu!(run_spec::_RunSpec, st::GPULLGState, gH, trace::_Trace,
     _checkpoint_llg!(checkpointer, run_spec, st.h_config, trace, ns, true, fstate)
     return LLGResult(trace.times, trace.energies, trace.means, trace.series,
                      copy(st.h_config), ns, run_spec.dt, mi, run_spec.kt, run_spec.seed,
-                     prob.H.n_active, prob.H.n_spin_active, _compute_string(run_spec),
-                     _thermostat_string(run_spec.thermostat))
+                     prob.b_ext, prob.H.n_active, prob.H.n_spin_active,
+                     _compute_string(run_spec), _thermostat_string(run_spec.thermostat))
 end
 
 """

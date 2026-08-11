@@ -398,7 +398,7 @@ function _init_filter_state(noise_filter::ColoredNoiseFilter, H::TiledHamiltonia
     x = zeros(3 * m, n)
     zeta = Vector{Float64}(undef, 3 * m)
     @inbounds for s = 1:n
-        H.site_active[s] || continue
+        H.site_has_spin[s] || continue
         for b = 0:(3 * m ÷ 2 - 1)
             blk = philox_block(seed, _qt_ctr(s, 0, UInt32(2 + b)))
             n1, n2 = philox_normal2(blk)
@@ -448,7 +448,7 @@ function _fill_noise_quantum!(gth::Vector{SVector{3,Float64}},
     sections = noise_filter.sections
     m = 2 * length(sections)
     @inbounds for s = 1:n_sites(H)
-        if !H.site_active[s]
+        if !H.site_has_spin[s]
             gth[s] = zero(SVector{3,Float64})
             continue
         end

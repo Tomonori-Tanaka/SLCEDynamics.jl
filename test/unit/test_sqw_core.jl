@@ -71,13 +71,14 @@ _iw(kp::Int, M::Int) = kp + (M >>> 1) + 1
             SD._fill_window!(w, window)
             W2 = SD._window_power(w)
             # brute-force s^α(q,t) through the Cartesian route (independent
-            # path). The estimator's mean is over the FULL analysis window
-            # (L samples), not the M-truncated FFT segment.
+            # path). The estimator's mean is over the ANALYZED span — the samples
+            # the segments transform, `(nsegments−1)·hop + M`, which is exactly M
+            # here (nsegments = 1) — never the full trimmed window (review
+            # 2026-08-11 M6: a full-window mean leaked residual DC into ω = 0).
             sup = supercell_crystal(cr2, (2, 1, 1))
             rcart = cartesian_positions(sup)
             n = MC.n_sites(H2)
-            L = length(tr2.times)
-            spin_means = [sum(tr2.traj[α, s, j] for j = 1:L) / L for α = 1:3, s = 1:n]
+            spin_means = [sum(tr2.traj[α, s, j] for j = 1:M) / M for α = 1:3, s = 1:n]
             for (iq, q) in enumerate(qs2)
                 qc = SD._q_cartesian(cr2, SVector{3,Float64}(q))
                 for α = 1:3
@@ -268,5 +269,33 @@ _iw(kp::Int, M::Int) = kp + (M >>> 1) + 1
         # the top-5 % edge band, so the screen fires
         @test_logs (:warn, r"folds back") match_mode = :any structure_factor(
             spiral(2π * 131 / M), times, Hr, crr, q1; window = :none)
+    end
+
+    @testset "samples beyond the analyzed span do not touch the spectrum (review M6)" begin
+        # With nt = 24, nsegments = 1: M = prevpow(2, 24) = 16, so samples 17–24 are
+        # never transformed. The per-site mean (and hence S_el and the subtracted
+        # DC) must be computed over the 16 analyzed samples only — before the fix
+        # the mean ran over all 24, and a drifting tail leaked a spurious residual-DC
+        # weight into the INELASTIC ω = 0 bin. The gate is an invariance: replacing
+        # the never-transformed tail with junk must change nothing.
+        Hr = MC.TiledHamiltonian(_ring_model(-0.02); dims = (1, 1, 1))
+        crr = _dimer_crystal()
+        nt = 24
+        times = collect(0.0:1.0:(nt-1))
+        rng = MersenneTwister(5)
+        traj = Array{Float64,3}(undef, 3, 4, nt)
+        for k = 1:nt, j = 1:4
+            v = randn(rng, 3)
+            traj[:, j, k] .= v ./ norm(v)
+        end
+        q1 = [[0.0, 0.0, 1.0]]
+        r1 = structure_factor(traj, times, Hr, crr, q1; window = :none)
+        traj2 = copy(traj)
+        for k = 17:nt, j = 1:4                       # junk tail, unit columns
+            traj2[:, j, k] .= (0.0, 0.0, (-1.0)^k)
+        end
+        r2 = structure_factor(traj2, times, Hr, crr, q1; window = :none)
+        @test r2.S == r1.S
+        @test r2.S_el == r1.S_el
     end
 end

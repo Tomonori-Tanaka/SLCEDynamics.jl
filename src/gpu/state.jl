@@ -64,7 +64,7 @@ function GPULLGState(gH, prob::LLGProblem, config0::SpinConfig,
     dsigma = KernelAbstractions.allocate(backend, Float64, n)
     copyto!(dsigma, sigma)
     dactive = KernelAbstractions.allocate(backend, Int8, n)
-    copyto!(dactive, Int8[prob.H.site_active[s] ? Int8(1) : Int8(0) for s = 1:n])
+    copyto!(dactive, Int8[prob.H.site_has_spin[s] ? Int8(1) : Int8(0) for s = 1:n])
     gsc = SLCEMonteCarlo.GPUGradientScratch(gH)
     if fstate === nothing
         dxstate = KernelAbstractions.allocate(backend, Float64, 0, 0)

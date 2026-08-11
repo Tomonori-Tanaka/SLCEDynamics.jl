@@ -43,7 +43,7 @@ function _sigma_noise(prob::LLGProblem, kt::Float64, dt::Float64)::Vector{Float6
     n = n_sites(prob.H)
     sigma = zeros(n)
     for s = 1:n
-        prob.H.site_active[s] || continue
+        prob.H.site_has_spin[s] || continue
         sigma[s] = sqrt(2 * prob.alpha[s] * kt * HBAR_EV_FS * prob.magmom[s] /
                         (prob.g[s] * dt))
     end
@@ -54,7 +54,7 @@ end
 function _fill_noise!(gth::Vector{SVector{3,Float64}}, H::TiledHamiltonian,
                       sigma::Vector{Float64}, seed::UInt64, step::Int)::Nothing
     @inbounds for s = 1:n_sites(H)
-        if !H.site_active[s]
+        if !H.site_has_spin[s]
             gth[s] = zero(SVector{3,Float64})
             continue
         end

@@ -51,7 +51,7 @@ struct LLGProblem
         pref = zeros(n)
         gzee = fill(zero(SVector{3,Float64}), n)
         for s = 1:n
-            H.site_active[s] || continue
+            H.site_has_spin[s] || continue
             (isfinite(mm[s]) && mm[s] > 0) || throw(ArgumentError(
                 "magmom must be positive and finite on active sites; " *
                 "got $(mm[s]) at site $s"))
@@ -89,7 +89,7 @@ function Base.show(io::IO, prob::LLGProblem)
     n = n_sites(prob.H)
     # report parameter ranges over ACTIVE sites only — inactive entries are
     # unvalidated placeholders (deliberately ignored by the constructor)
-    act = findall(s -> prob.H.site_active[s], 1:n)
+    act = findall(s -> prob.H.site_has_spin[s], 1:n)
     if isempty(act)
         print(io, "LLGProblem($(n) sites, none active)")
         return
@@ -116,7 +116,7 @@ SLCEMonteCarlo.total_energy(prob::LLGProblem, config::SpinConfig)::Float64 =
 function _zeeman_energy(prob::LLGProblem, config::SpinConfig)::Float64
     E = 0.0
     @inbounds for s = 1:n_sites(prob.H)
-        prob.H.site_active[s] || continue
+        prob.H.site_has_spin[s] || continue
         E += dot(prob.gzee[s], config[s])
     end
     return E

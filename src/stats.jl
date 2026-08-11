@@ -43,6 +43,17 @@ default) estimate something else there and are **refused** unless
 `allow_evaluables = true`. Pass `evaluables = Evaluable[]` for the raw
 time-average stats (always valid), or take response functions from finite
 differences across runs (e.g. specific heat from `d⟨E⟩/dT`).
+
+Runs with an external field: at `b_ext ≠ 0` the equilibrium measure is
+`exp(−(E_SCE + E_Zeeman)/kT)`, but the recorded `:energy` observable series —
+the only thing the evaluables read — is the SLCE energy alone (the
+`SLCEMonteCarlo` observable contract), so `var(E)/kT²` would silently omit
+`var(E_Z) + 2·cov(E_SCE, E_Z)` (≈ all of the specific heat for a weakly
+anisotropic spin in a strong field), and the zero-field susceptibility formula
+is not `∂m/∂B` at finite field. Evaluables are therefore **refused** on such a
+run unless `allow_evaluables = true`; the raw time-average stats
+(`evaluables = Evaluable[]`) remain valid, and `result.energies` (which does
+include the Zeeman term) is available for hand-built estimates.
 """
 function equilibrium_stats(result::LLGResult;
                            evaluables::Vector{Evaluable} = standard_evaluables(),
@@ -60,6 +71,16 @@ function equilibrium_stats(result::LLGResult;
             "stats, take response functions from finite differences across " *
             "runs (specific heat from d⟨E⟩/dT), or insist with " *
             "allow_evaluables = true"))
+    any(!iszero, result.b_ext) && !isempty(evaluables) && !allow_evaluables &&
+        throw(ArgumentError(
+            "this run has b_ext = $(Tuple(result.b_ext)) T, but the recorded " *
+            ":energy observable series is the SLCE energy alone — specific heat " *
+            "from var(E)/kT² would silently omit the Zeeman channel " *
+            "(var(E_Z) + 2cov), and the zero-field susceptibility formula is not " *
+            "∂m/∂B at finite field. Pass evaluables = Evaluable[] for the raw " *
+            "time-average stats, use result.energies (Zeeman-inclusive) for " *
+            "hand-built estimates, take response functions from finite " *
+            "differences across runs, or insist with allow_evaluables = true"))
     nm = length(result.times)
     0 <= discard < nm || throw(ArgumentError(
         "discard must be in [0, $(nm - 1)]; got $discard"))

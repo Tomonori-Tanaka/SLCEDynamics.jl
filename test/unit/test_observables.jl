@@ -41,6 +41,38 @@
         mz = sum(c[3] for c in r.config)
         @test r.energies[end] ≈
               r.series[:esce][1, end] - 2.0 * SD.MU_B_EV_T * bz * mz atol = 1e-14
+        # the run records its field
+        @test r.b_ext == SVector{3,Float64}(0.0, 0.0, bz)
+    end
+
+    @testset "equilibrium_stats refuses evaluables at b_ext ≠ 0 (review 2026-08-11)" begin
+        # The evaluables read the recorded :energy series — the SLCE energy alone —
+        # while a b_ext ≠ 0 run samples exp(−(E_SCE + E_Z)/kT): var(E)/kT² silently
+        # omitted the Zeeman channel (≈ ALL of C for a weakly anisotropic spin in a
+        # strong field). Mirror of the quantum-thermostat refusal.
+        probB = LLGProblem(H; magmom = 2.0, alpha = 0.5, b_ext = (0.0, 0.0, 4.0))
+        rB = run_llg(probB, config0; dt = 0.01, nsteps = 200, measure_interval = 10,
+                     kT = 0.05, seed = UInt64(11),
+                     observables = standard_observables(H))
+        err = try
+            equilibrium_stats(rB)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("Zeeman", err.msg)
+        # the raw time-average stats stay available, and the override works
+        st0 = equilibrium_stats(rB; evaluables = SD.Evaluable[])
+        @test haskey(st0, :energy)
+        sti = equilibrium_stats(rB; allow_evaluables = true)
+        @test haskey(sti, :specific_heat)
+        # a zero-field thermostatted run is untouched by the new guard
+        probZ = LLGProblem(H; magmom = 2.0, alpha = 0.5)
+        rz = run_llg(probZ, config0; dt = 0.01, nsteps = 200, measure_interval = 10,
+                     kT = 0.05, seed = UInt64(12),
+                     observables = standard_observables(H))
+        @test haskey(equilibrium_stats(rz), :specific_heat)
     end
 
     @testset "an Evaluable's scope picks the site count it is normalized by" begin
@@ -57,6 +89,7 @@
         result = SD.LLGResult(collect(1.0:nm), zeros(nm),
                            fill(SVector{3,Float64}(0, 0, 1), nm), series,
                            config0, nm, 0.01, 1, 0.05, UInt64(7),
+                           zero(SVector{3,Float64}),    # b_ext
                            10, 4,                       # n_active, n_spin_active
                            "cpu", "classical")
         @test result.n_active != result.n_spin_active         # teeth: the two must differ

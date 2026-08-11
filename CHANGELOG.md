@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — S(q,ω) subtracts the mean of the ANALYZED span (review 2026-08-11 M6)
+
+**Changes S(q,ω) numbers whenever the trimmed window is not a power of two.**
+The per-site mean (and hence the elastic tensor and the subtracted DC) was
+computed over the whole trimmed window `L`, while the Welch segments transform
+only `(nsegments−1)·hop + M ≤ L` samples — as little as half of `L` on the
+default path (`M = prevpow(2, L)`). The residual per-site DC `ē_L − ē_span`
+landed in the **inelastic** ω = 0 bin, defeating the stated invariant that
+Bragg weight is separated into `S_el`; Parseval and the channel sum rule are
+structurally blind to it. Mean, `S_el`, and the projection loop now all run
+over the analyzed span. Gate: samples beyond the span are junk-invariant
+(`test_sqw_core.jl`).
+
+### Fixed — `equilibrium_stats` refuses evaluables on a `b_ext ≠ 0` run (review 2026-08-11 M5)
+
+The evaluables read the recorded `:energy` series — the SLCE energy alone (the
+`SLCEMonteCarlo` observable contract) — while a field-carrying run samples
+`exp(−(E_SCE + E_Zeeman)/kT)`: specific heat from `var(E)/kT²` silently omitted
+the Zeeman channel (essentially all of C for a weakly anisotropic spin in a
+strong field), and the zero-field susceptibility formula is not `∂m/∂B` at
+finite field. `LLGResult` now records `b_ext` (new field; positional
+constructors gain one argument), and `equilibrium_stats` refuses nonempty
+evaluables on such a run unless `allow_evaluables = true` — mirroring the
+quantum-thermostat refusal. Raw time-average stats remain available, and
+`result.energies` (Zeeman-inclusive) supports hand-built estimates.
+
+### Fixed — config doors validate inactive columns too (review 2026-08-11)
+
+The energy path evaluates the harmonic kernels at every site, so an
+out-of-domain inactive `config0` placeholder died as a bare Legendre
+`DomainError` naming nothing — the audit-#1 failure shape surviving on the
+inactive path (`SLCEMonteCarlo` refuses the same matrix loudly). Both doors now
+validate every column: `_config_projected` passes inactive columns through the
+non-projecting `Trusted` door (bitwise, as the resume gates require), and
+`_config_verbatim` validates all columns on restore.
+
+### Changed — aliasing screen per q + structural floor; spin-side masks; SEM; off-grid drop (review 2026-08-11)
+
+- The temporal-aliasing screen now (i) screens **per q** (worst q wins) — the
+  all-q aggregate diluted a fold confined to part of a long `q_path` below any
+  threshold; (ii) floors the threshold at twice the actual edge-bin fraction —
+  at `nfft = 8` the discrete edge band holds 12.5 % of a flat spectrum, above
+  the 5 % continuum ceiling the 0.10 was calibrated against, so the screen
+  false-alarmed structurally there; (iii) warns instead of silently passing
+  when the spectral weight is not finite (`NaN > threshold` is `false`).
+- Every spin-side site mask reads `site_has_spin` instead of `site_active`
+  (integrators, noise, thermostat, renormalization, means, S(q,ω) site lists,
+  GPU mask upload). Bitwise no-op today — the two predicates coincide on every
+  Hamiltonian this package can run — but displacement-only sites would have
+  been precessed and renormalized the day spin–lattice dynamics lands.
+- The ensemble SEM accumulates scatter about the fixed reference `S_1` instead
+  of the one-pass `Σ|S|²/R − |S̄|²` form, which cancelled to exactly `0.0`
+  below ~1e-8 relative scatter (algebraically identical otherwise).
+- `trajectory`'s off-grid final-measurement drop derives from the stored
+  schedule (`nsteps % measure_interval`), not from float spacing of the
+  recorded time grid.
+
 ### Added — a temporal-aliasing screen on `structure_factor` (audit #8)
 
 The analysis Nyquist is `π/(measure_interval·dt)` — `measure_interval` times

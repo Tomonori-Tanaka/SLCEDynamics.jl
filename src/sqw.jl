@@ -8,8 +8,9 @@
 #     S_el^{αβ}(q) = m̄^α(q)^* m̄^β(q),  m̄ = (1/√N) Σ_s e^{−2πi f·x_s} ē_s
 #
 # with f the fractional q (training-cell r.l.u.), x_s = cell + frac_atom the
-# fractional site position, ē_s the per-site time mean over the analysis window
-# (ONE global mean — never per segment), N the active-site count, and the
+# fractional site position, ē_s the per-site time mean over the ANALYZED span —
+# the `(nsegments−1)·hop + M` samples the segments transform, not the full trimmed
+# window (ONE global mean — never per segment), N the active-site count, and the
 # two-sided fftshifted frequency axis ω_k = 2πk/(MΔt_s). A spin precessing
 # positively about +ẑ lands at +ω; a magnon running toward +q lands at +q.
 
@@ -50,8 +51,10 @@ function trajectory(result::LLGResult; name::Symbol = :spins)
         "series :$name has $(size(mat, 1)) components — not a 3n trajectory"))
     times = result.times
     nt = length(times)
-    if nt >= 3 && !isapprox(times[nt] - times[nt-1], times[2] - times[1];
-                            rtol = 1e-8)
+    # Derived from the stored schedule, not from float spacing of the recorded grid
+    # (which rested on the recorded floats being exact). A 2-measurement run keeps
+    # both: its grid is trivially uniform, whatever the final spacing.
+    if nt >= 3 && result.nsteps % result.measure_interval != 0
         nt -= 1                       # off-grid final measurement
     end
     traj = reshape(view(mat, :, 1:nt), 3, size(mat, 1) ÷ 3, nt)
@@ -418,7 +421,8 @@ function _sqw_chunk!(S::Array{ComplexF64,4}, S_el::Array{ComplexF64,3},
     invsqrtN = 1 / sqrt(length(active))
     phi = Vector{ComplexF64}(undef, n)
     atom_ph = Vector{Float64}(undef, H.n_cell_atoms)
-    proj = Matrix{ComplexF64}(undef, p.L, 3)          # s^α(q, t) columns
+    span = (p.nsegments - 1) * p.hop + p.M            # the samples segments transform
+    proj = Matrix{ComplexF64}(undef, span, 3)         # s^α(q, t) columns
     X = Matrix{ComplexF64}(undef, p.M, 3)
     tw = _Twiddle(p.M)
     scale = p.dtm / (p.M * p.W2 * p.nsegments)
@@ -436,7 +440,7 @@ function _sqw_chunk!(S::Array{ComplexF64,4}, S_el::Array{ComplexF64,3},
             mbar1 += ph * e1
             mbar2 += ph * e2
             mbar3 += ph * e3
-            for j = 1:p.L
+            for j = 1:span
                 col = p.c0 + j - 1
                 proj[j, 1] += ph * (traj[1, s, col] - e1)
                 proj[j, 2] += ph * (traj[2, s, col] - e2)
@@ -481,7 +485,11 @@ end
 # 0.10 threshold sits 2× above the flat-spectrum ceiling and 10× below the detected
 # signal. One direction only: the same fixture folded deeply (1.25π → lands at 0.75π)
 # reads 3.6e-7 — a mid-spectrum alias is indistinguishable from a real branch, which
-# the docstring says.
+# the docstring says. Since the 2026-08-11 review the screen (i) runs PER q, worst q
+# wins — an aggregate over a long q-path diluted a partial-path fold below any
+# threshold — and (ii) floors the threshold at 2× the actual edge-bin fraction,
+# because at nw = 8 the discrete edge band holds 1/8 = 12.5 % of a flat spectrum,
+# above the continuum ceiling the 0.10 was calibrated against.
 const _SQW_EDGE_BAND = 0.05
 const _SQW_EDGE_WARN = 0.10
 
@@ -490,23 +498,44 @@ function _warn_temporal_aliasing(S::Array{ComplexF64,4}, omegas::Vector{Float64}
     nw = length(omegas)
     nw >= 8 || return nothing                       # too few bins to define an "edge"
     wmax = maximum(abs, omegas)
-    total = 0.0
-    edge = 0.0
-    for k = 1:nw
-        w = 0.0
-        for iq in axes(S, 3), α = 1:3
-            w += real(S[α, α, iq, k])               # auto-spectra, ≥ 0
+    inedge(k) = abs(omegas[k]) >= (1 - _SQW_EDGE_BAND) * wmax
+    # Structural floor (review 2026-08-11): at small nw the discrete edge band is a
+    # much larger fraction of the bins than the 5 % continuum ceiling — 1/8 = 12.5 %
+    # at nw = 8 — so a perfectly flat spectrum would trip a fixed 0.10. Warn only
+    # above max(threshold, 2 × the actual edge-bin fraction).
+    nedge = count(inedge, 1:nw)
+    thresh = max(_SQW_EDGE_WARN, 2 * nedge / nw)
+    # Screen PER q (worst q wins), not on the all-q aggregate: a fold confined to
+    # part of a long q-path — a band top crossing the Nyquist over a few percent of
+    # `q_path(...)` — is fully aliased at those q yet diluted below any threshold
+    # in the aggregate.
+    worst = 0.0
+    for iq in axes(S, 3)
+        total = 0.0
+        edge = 0.0
+        for k = 1:nw
+            w = 0.0
+            for α = 1:3
+                w += real(S[α, α, iq, k])           # auto-spectra, ≥ 0
+            end
+            total += w
+            inedge(k) && (edge += w)
         end
-        total += w
-        abs(omegas[k]) >= (1 - _SQW_EDGE_BAND) * wmax && (edge += w)
+        if !isfinite(total)
+            # `NaN > thresh` is false — a corrupted spectrum must not PASS the screen.
+            @warn "the spectral weight at q index $iq is not finite — the spectrum " *
+                  "is corrupted and the aliasing screen cannot assess it"
+            return nothing
+        end
+        total > 0 || continue
+        f = edge / total
+        f > worst && (worst = f)
     end
-    total > 0 || return nothing
-    frac = edge / total
-    frac > _SQW_EDGE_WARN &&
-        @warn "$(round(100 * frac; digits = 1)) % of the inelastic weight sits in the " *
-              "top $(round(Int, 100 * _SQW_EDGE_BAND)) % of the frequency range — " *
-              "spectral content at or beyond the analysis Nyquist π/dt_meas = " *
-              "$(round(π / dtm; sigdigits = 4)) rad/fs " *
+    worst > thresh &&
+        @warn "$(round(100 * worst; digits = 1)) % of the inelastic weight at one q " *
+              "sits in the top $(round(Int, 100 * _SQW_EDGE_BAND)) % of the " *
+              "frequency range — spectral content at or beyond the analysis Nyquist " *
+              "π/dt_meas = $(round(π / dtm; sigdigits = 4)) rad/fs " *
               "($(round(1000 * HBAR_EV_FS * π / dtm; sigdigits = 4)) meV) folds back " *
               "into the band, and every sum rule still passes (aliasing conserves " *
               "power). Reduce `measure_interval` (or `dt`) so the highest mode sits " *
@@ -549,10 +578,14 @@ for ≥ 3 members), and `structure_factor(path::AbstractString, …)` (a
     sum rule still passes (aliasing conserves power), so nothing downstream can
     detect it. Choose `measure_interval` so the highest mode sits well below
     `π/dt_meas`. As a screen, a warning fires when more than
-    $(100 * _SQW_EDGE_WARN) % of the inelastic weight sits within the top
+    $(100 * _SQW_EDGE_WARN) % of the inelastic weight AT ANY SINGLE q (worst q
+    wins — a fold confined to part of a long q-path would be diluted away in an
+    all-q aggregate) sits within the top
     $(100 * _SQW_EDGE_BAND) % of the frequency range — a band top
     crossing the Nyquist folds back continuously, so it necessarily deposits
-    weight at the edge. The screen is a heuristic in one direction only: a
+    weight at the edge. (With few frequency bins the threshold floors at twice
+    the edge band's actual bin fraction, which is what a structureless spectrum
+    puts there.) The screen is a heuristic in one direction only: a
     DEEPLY folded isolated mode lands mid-spectrum where it is
     indistinguishable from a real branch, so the absence of the warning is not
     a certificate.
@@ -586,17 +619,24 @@ function structure_factor(traj::AbstractArray{<:Real,3},
     qsv = [SVector{3,Float64}(q) for q in qs]
     dims = NTuple{3,Int}(H.dims)
     ms = [_q_ints(f, dims) for f in qsv]
-    active = [s for s = 1:n if H.site_active[s]]
+    active = [s for s = 1:n if H.site_has_spin[s]]
     isempty(active) && throw(ArgumentError("the Hamiltonian has no active sites"))
     p0 = _sqw_params(nt, dtm, Int(discard), Int(nsegments), Float64(overlap),
                      window, seglength === nothing ? nothing : Int(seglength))
     p = (; p0..., dtm, nsegments = Int(nsegments))
-    # per-site mean over the analysis window (ONE global mean, never per segment)
+    # Per-site mean over the ANALYZED span — the samples the segments actually
+    # transform, `(nsegments−1)·hop + M`, which can be barely half of the trimmed
+    # window `L` on the default path (`M = prevpow(2, L)`). A mean taken over all
+    # of `L` left a residual per-site DC `δ = ē_L − ē_span` inside every segment,
+    # which landed in the INELASTIC ω = 0 bin — exactly the Bragg weight `S_el`
+    # exists to keep out of the spectrum (review 2026-08-11 M6). Still ONE global
+    # mean, never per segment.
+    span = (p.nsegments - 1) * p.hop + p.M
     spin_means = zeros(3, n)
-    @inbounds for j = 1:p.L, s in active, α = 1:3
+    @inbounds for j = 1:span, s in active, α = 1:3
         spin_means[α, s] += traj[α, s, p.c0+j-1]
     end
-    spin_means ./= p.L
+    spin_means ./= span
     nq = length(qsv)
     nw = p.M
     S = zeros(ComplexF64, 3, 3, nq, nw)
@@ -638,7 +678,13 @@ function structure_factor(results::AbstractVector{LLGResult},
                           kwargs...)
     R == 1 && return r1
     Ssum = copy(r1.S)
-    Ssq = abs2.(r1.S)
+    # Scatter accumulated about the FIXED reference S_1 (d_r = S_r − S_1), not via
+    # the one-pass Σ|S|²/R − |S̄|² form: the latter cancels catastrophically once the
+    # realization scatter drops below ~1e-8 relative and reads exactly 0.0 instead
+    # of a small number. Σ|S_r − S̄|² = Σ|d_r|² − |Σd_r|²/R, algebraically identical,
+    # but the subtraction is now between scatter-sized quantities.
+    Dsum = zeros(ComplexF64, size(r1.S))
+    Dsq = zeros(Float64, size(r1.S))
     Sel = copy(r1.S_el)
     for r = 2:R
         trace = trajectory(results[r]; name)
@@ -647,13 +693,14 @@ function structure_factor(results::AbstractVector{LLGResult},
             "share dt, nsteps, and measure_interval"))
         ri = structure_factor(trace.traj, trace.times, H, crystal, qs; kwargs...)
         Ssum .+= ri.S
-        Ssq .+= abs2.(ri.S)
+        Dsum .+= ri.S .- r1.S
+        Dsq .+= abs2.(ri.S .- r1.S)
         Sel .+= ri.S_el
     end
     Smean = Ssum ./ R
     Sel ./= R
     err = R >= 3 ?
-          sqrt.(max.(Ssq ./ R .- abs2.(Smean), 0.0) ./ (R - 1)) : nothing
+          sqrt.(max.(Dsq .- abs2.(Dsum) ./ R, 0.0) ./ (R * (R - 1))) : nothing
     return SQWResult(r1.qs, r1.qs_requested, r1.qs_cart, r1.omegas,
                      r1.energies_mev, Smean, Sel, err, r1.window, r1.nfft,
                      r1.nsegments, r1.overlap, r1.discard, r1.dt_meas, R)
@@ -716,9 +763,9 @@ function channel_sumrule(traj::AbstractArray{<:Real,3},
     M = prevpow(2, nt)
     tw = _Twiddle(M)
     # active atoms (activity is uniform across cells — asserted)
-    act_atom = [H.site_active[a] for a = 1:n_a]
+    act_atom = [H.site_has_spin[a] for a = 1:n_a]
     for s = 1:n
-        H.site_active[s] == act_atom[mod1(s, n_a)] ||
+        H.site_has_spin[s] == act_atom[mod1(s, n_a)] ||
             error("site activity is not uniform across cells")
     end
     spin_means = zeros(3, n)
@@ -749,7 +796,7 @@ function channel_sumrule(traj::AbstractArray{<:Real,3},
     end
     rhs = 0.0
     @inbounds for s = 1:n
-        H.site_active[s] || continue
+        H.site_has_spin[s] || continue
         rhs += 1 - (spin_means[1, s]^2 + spin_means[2, s]^2 + spin_means[3, s]^2)
     end
     return (; lhs, rhs)

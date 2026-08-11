@@ -52,7 +52,13 @@ equation, unit system, and the settled stochastic-LLG design.
 - **Inactive-site convention ↔ `SLCEMonteCarlo`'s frozen-spin convention**:
   integrator stages skip, no Zeeman, `mean_spins` excludes, `pref = 0`, spins
   bitwise frozen (`test_single_spin.jl` frozen testset). Mirrors the sibling —
-  if `SLCEMonteCarlo` changes `site_active` semantics, this package follows.
+  and since 2026-08-11 every spin-side mask here reads the sibling's SPIN
+  predicate `site_has_spin` (not `site_active`, which also counts
+  displacement-only sites). The two coincide on every Hamiltonian this package
+  can currently run (the energy path refuses joint models), so the switch was a
+  bitwise no-op — it exists so the day spin–lattice dynamics lands,
+  displacement-only sites are not precessed and renormalized. If `SLCEMonteCarlo`
+  changes either predicate's semantics, this package follows.
 - **Upstream gradient contract**: `energy_gradient!` (tangent-projected, exact,
   bit-identical for any ntasks, ≈ 1 sweep/call) is pinned in SLCEMonteCarlo's
   `test_gradient.jl`; this package's determinism gates assume it.
@@ -106,11 +112,13 @@ equation, unit system, and the settled stochastic-LLG design.
   bug the crash-resume gate in `test_checkpoint.jl` caught; verified by
   mutation 2026-08-11 — a normalize there turns exactly the resume
   bit-identity gates red, 39 tests, and nothing else). Restore still
-  VALIDATES active columns, through `SLCE.UnitVector3(…, Trusted())` — the
-  family's non-projecting door — so a corrupted `state/config` is refused
-  loudly; that refusal cannot fork a viable trajectory (an off-band or
-  `|z| > 1` stored column is one the uninterrupted run would have killed at
-  its next gradient evaluation). The model identity
+  VALIDATES every column (inactive included, since the 2026-08-11 review —
+  the harmonic kernels evaluate every site), through
+  `SLCE.UnitVector3(…, Trusted())` — the family's non-projecting door — so a
+  corrupted `state/config` is refused loudly; that refusal cannot fork a
+  viable trajectory (an off-band or `|z| > 1` stored column is one the
+  uninterrupted run would have killed at its next gradient evaluation). The
+  model identity
   is `SLCEMonteCarlo.model_fingerprint` (upstream public facade — its mixing is
   part of this file format too).
 - **`config0` entry door ↔ SLCE's unit-direction rule ↔ the GPU composite
@@ -118,7 +126,10 @@ equation, unit system, and the settled stochastic-LLG design.
   `UnitVector3` ↔ `test_gpu_llg.jl` `_ref_gpu_loop`): both drivers share ONE
   validate-then-project door for `config0` — active columns through the
   projecting `UnitVector3` (finite, `1e-6` band, component bound of the
-  projected value), inactive placeholders verbatim. The old local `< 1e-8`
+  projected value), inactive placeholders bitwise but VALIDATED through the
+  non-projecting `Trusted` door (since the 2026-08-11 review: the energy path
+  evaluates the harmonic kernels at every site, so an out-of-domain inactive
+  placeholder died as a bare Legendre `DomainError`). The old local `< 1e-8`
   band without projection was the audited live bug (a near-pole column `5e-9`
   off unit → bare `DomainError` from `dnPl` inside the first gradient
   evaluation), duplicated verbatim in `gpu/run.jl`. Because entry projection

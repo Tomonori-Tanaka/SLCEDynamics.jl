@@ -153,10 +153,14 @@ sign and normalization frozen by exact deterministic gates (`test_sqw_gates.jl`,
   loudly (`qs` vs `qs_requested`). Phases need no Cartesian positions —
   `q·r_s = 2π f·(cell + frac_atom)` identically, with the cell part in exact
   integer arithmetic.
-- **Mean/elastic**: the per-site time mean over the analysis window (one global
-  mean, never per segment) is always subtracted; the elastic tensor is reported
-  separately (`S_el`) so Bragg weight cannot leak through the window into the
-  inelastic spectrum.
+- **Mean/elastic**: the per-site time mean over the **analyzed span** — the
+  `(nsegments−1)·hop + nfft` samples the segments actually transform, not the
+  full trimmed window (one global mean, never per segment) — is always
+  subtracted; the elastic tensor is reported separately (`S_el`) so Bragg
+  weight cannot leak through the window into the inelastic spectrum. (A mean
+  over the full trimmed window left a residual DC `ē_L − ē_span` in the
+  inelastic ω = 0 bin whenever the window was not a power of two — review
+  2026-08-11 M6.)
 - **Axes/components**: two-sided fftshifted ω [rad/fs] (for even `nfft` the
   Nyquist bin exists only at −M/2) + `energies_mev`; the full 3×3 Hermitian
   tensor is stored (all reductions are cheap post-contractions): `sqw_diag`,

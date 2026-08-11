@@ -83,7 +83,7 @@ function _step!(::DepondtMertens, config::SpinConfig, prob::LLGProblem,
     H = prob.H
     energy_gradient!(scratch.G, H, config; ntasks = ntasks)
     @inbounds for s = 1:n_sites(H)
-        if !H.site_active[s]
+        if !H.site_has_spin[s]
             scratch.epred[s] = config[s]
             continue
         end
@@ -93,7 +93,7 @@ function _step!(::DepondtMertens, config::SpinConfig, prob::LLGProblem,
     end
     energy_gradient!(scratch.G, H, scratch.epred; ntasks = ntasks)
     @inbounds for s = 1:n_sites(H)
-        H.site_active[s] || continue
+        H.site_has_spin[s] || continue
         ω2 = _omega(prob, s, scratch.epred[s], scratch.G[s], scratch.gth[s])
         config[s] = _rotate(config[s], (scratch.omega1[s] + ω2) * (dt / 2))
     end
@@ -106,7 +106,7 @@ function _step!(::HeunProjected, config::SpinConfig, prob::LLGProblem,
     H = prob.H
     energy_gradient!(scratch.G, H, config; ntasks = ntasks)
     @inbounds for s = 1:n_sites(H)
-        if !H.site_active[s]
+        if !H.site_has_spin[s]
             scratch.epred[s] = config[s]
             continue
         end
@@ -117,7 +117,7 @@ function _step!(::HeunProjected, config::SpinConfig, prob::LLGProblem,
     end
     energy_gradient!(scratch.G, H, scratch.epred; ntasks = ntasks)
     @inbounds for s = 1:n_sites(H)
-        H.site_active[s] || continue
+        H.site_has_spin[s] || continue
         ω2 = _omega(prob, s, scratch.epred[s], scratch.G[s], scratch.gth[s])
         e = config[s] + (dt / 2) * (cross(scratch.omega1[s], config[s]) +
                                     cross(ω2, scratch.epred[s]))
