@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — a temporal-aliasing screen on `structure_factor` (audit #8)
+
+The analysis Nyquist is `π/(measure_interval·dt)` — `measure_interval` times
+lower than the integration Nyquist — and spectral content above it folds back
+into the band as a spurious branch while every sum rule still passes (aliasing
+conserves power), so nothing warned. `structure_factor` now warns when more
+than 10 % of the inelastic weight sits in the top 5 % of the frequency range: a
+band top crossing the Nyquist folds back continuously, so it necessarily
+deposits weight at the edge. The threshold must clear the structureless
+ceiling — a perfectly flat spectrum already puts ~5 % of its weight in a 5 %
+edge band, and a short heavily-damped thermal run measured 3.0–3.6 % from its
+noise floor alone — so 0.10 sits 2× above that ceiling and 10× below the
+detected signal (ring fixture, `window = :none`: healthy 3.2e-11, in-band
+leakage 8.1e-6, just-past-Nyquist 0.99999). One direction only (docstring
+warns): a deeply folded isolated mode lands mid-spectrum (measured 3.6e-7),
+where the screen cannot see it. Gates: a synthetic single-bin spiral on the
+exact analysis grid, healthy (bin 38, no warning) and folded ("bin 131" →
+|ω| = 0.977π, warning).
+
+### Fixed — `_measure!` names the ncomp = 1 mismatch (audit #9)
+
+An `Observable` declared `ncomp == 1` whose function returned a 1-element
+vector died as a bare `MethodError` on the column assignment, while the
+`ncomp > 1` branch two lines below raised a named `DimensionMismatch`. Both
+branches now raise the named error.
+
 ### Changed — `config0` enters through the family's unit-direction door
 
 **Breaking for bit-level trajectory comparisons.** `run_llg` and `gpu_run_llg`

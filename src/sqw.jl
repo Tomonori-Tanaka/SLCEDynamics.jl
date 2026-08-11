@@ -468,6 +468,53 @@ function _sqw_chunk!(S::Array{ComplexF64,4}, S_el::Array{ComplexF64,3},
     return nothing
 end
 
+# Temporal-aliasing screen (audit 2026-08-01 #8). A magnon band whose top crosses the
+# analysis Nyquist folds back CONTINUOUSLY from the edge, so it necessarily deposits
+# spectral weight in the top band of |ω| — that is the detectable signature. The
+# threshold must clear the STRUCTURELESS ceiling: a perfectly flat spectrum already
+# puts `_SQW_EDGE_BAND` (≈ 5 %) of its weight in the edge band, and a short, heavily
+# damped thermal run measured 3.0–3.6 % from its noise floor alone (the suite's
+# kT = 0.02, α = 0.8 workhorse) — anything below ~5 % cannot separate "no structure"
+# from "folded". Calibrated on the ring fixture (single m = 1 mode, `window = :none`,
+# the leakage-worst case): healthy (ω·dtm = 0.098) edge fraction 3.2e-11; mode INSIDE
+# at 0.94π (pure leakage) 8.1e-6; mode just past π (folds to the edge) 0.99999. The
+# 0.10 threshold sits 2× above the flat-spectrum ceiling and 10× below the detected
+# signal. One direction only: the same fixture folded deeply (1.25π → lands at 0.75π)
+# reads 3.6e-7 — a mid-spectrum alias is indistinguishable from a real branch, which
+# the docstring says.
+const _SQW_EDGE_BAND = 0.05
+const _SQW_EDGE_WARN = 0.10
+
+function _warn_temporal_aliasing(S::Array{ComplexF64,4}, omegas::Vector{Float64},
+                                 dtm::Float64)
+    nw = length(omegas)
+    nw >= 8 || return nothing                       # too few bins to define an "edge"
+    wmax = maximum(abs, omegas)
+    total = 0.0
+    edge = 0.0
+    for k = 1:nw
+        w = 0.0
+        for iq in axes(S, 3), α = 1:3
+            w += real(S[α, α, iq, k])               # auto-spectra, ≥ 0
+        end
+        total += w
+        abs(omegas[k]) >= (1 - _SQW_EDGE_BAND) * wmax && (edge += w)
+    end
+    total > 0 || return nothing
+    frac = edge / total
+    frac > _SQW_EDGE_WARN &&
+        @warn "$(round(100 * frac; digits = 1)) % of the inelastic weight sits in the " *
+              "top $(round(Int, 100 * _SQW_EDGE_BAND)) % of the frequency range — " *
+              "spectral content at or beyond the analysis Nyquist π/dt_meas = " *
+              "$(round(π / dtm; sigdigits = 4)) rad/fs " *
+              "($(round(1000 * HBAR_EV_FS * π / dtm; sigdigits = 4)) meV) folds back " *
+              "into the band, and every sum rule still passes (aliasing conserves " *
+              "power). Reduce `measure_interval` (or `dt`) so the highest mode sits " *
+              "well below the Nyquist. Note a DEEPLY folded branch lands " *
+              "mid-spectrum, where this screen cannot see it."
+    return nothing
+end
+
 """
     structure_factor(traj, times, H::TiledHamiltonian, crystal::Crystal, qs;
                      nsegments = 1, overlap = 0.5, window = :hann, discard = 0,
@@ -494,6 +541,21 @@ final measurement, if any, is dropped), `structure_factor(::Vector{LLGResult},
 …)` (a seed ensemble: spectra averaged, realization standard errors in `err`
 for ≥ 3 members), and `structure_factor(path::AbstractString, …)` (a
 [`run_llg`](@ref) checkpoint file — the persisted trajectory format).
+
+!!! warning "Temporal aliasing"
+    The analysis Nyquist is `π/dt_meas = π/(measure_interval·dt)` —
+    `measure_interval` times LOWER than the integration Nyquist. Spectral
+    content above it folds back into the band as a spurious branch, and every
+    sum rule still passes (aliasing conserves power), so nothing downstream can
+    detect it. Choose `measure_interval` so the highest mode sits well below
+    `π/dt_meas`. As a screen, a warning fires when more than
+    $(100 * _SQW_EDGE_WARN) % of the inelastic weight sits within the top
+    $(100 * _SQW_EDGE_BAND) % of the frequency range — a band top
+    crossing the Nyquist folds back continuously, so it necessarily deposits
+    weight at the edge. The screen is a heuristic in one direction only: a
+    DEEPLY folded isolated mode lands mid-spectrum where it is
+    indistinguishable from a real branch, so the absence of the warning is not
+    a certificate.
 """
 function structure_factor(traj::AbstractArray{<:Real,3},
                           times::AbstractVector{<:Real}, H::TiledHamiltonian,
@@ -551,6 +613,7 @@ function structure_factor(traj::AbstractArray{<:Real,3},
         end
     end
     omegas = _freq_axis(p.M, dtm)
+    _warn_temporal_aliasing(S, omegas, dtm)
     return SQWResult(qsv, copy(qsv), [_q_cartesian(crystal, f) for f in qsv],
                      omegas, 1000 .* HBAR_EV_FS .* omegas, S, S_el, nothing,
                      window, p.M, Int(nsegments), Float64(overlap),

@@ -75,5 +75,16 @@
         bad = [Observable(:bad, 2, v -> [1.0, 2.0, 3.0])]
         @test_throws DimensionMismatch run_llg(prob, config0; dt = 0.01,
                                                nsteps = 1, observables = bad)
+        # ncomp = 1 returning a vector gets the same NAMED error, not a bare
+        # MethodError from the assignment (audit #9)
+        badv = [Observable(:badv, 1, v -> [1.0])]
+        err = try
+            run_llg(prob, config0; dt = 0.01, nsteps = 1, observables = badv)
+            nothing
+        catch e
+            e
+        end
+        @test err isa DimensionMismatch
+        @test occursin("must return a Real", err.msg)
     end
 end

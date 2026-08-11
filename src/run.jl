@@ -320,6 +320,12 @@ function _measure!(energies::Vector{Float64}, means::Vector{SVector{3,Float64}},
         v = o.f(view)
         col = @view series[o.name][:, k]
         if o.ncomp == 1
+            # Mirror the ncomp > 1 branch's named error: a 1-element vector here
+            # would otherwise die as a bare MethodError on the assignment.
+            v isa Real || throw(DimensionMismatch(
+                "observable $(o.name) returned a $(typeof(v)); declared ncomp = 1 " *
+                "— a scalar observable must return a Real (return v[1], or declare " *
+                "the component count)"))
             col[1] = v
         else
             length(v) == o.ncomp || throw(DimensionMismatch(

@@ -242,4 +242,31 @@ _iw(kp::Int, M::Int) = kp + (M >>> 1) + 1
         @test_throws ArgumentError structure_factor(tr2.traj, tr2.times, H2,
                                                     _dimer_crystal(), qs2)
     end
+
+    @testset "temporal-aliasing screen (audit #8)" begin
+        # Synthetic m = 1 spiral on the 4-site ring, built directly on the analysis
+        # grid (dtm = 1): e_j(t) precesses at a hand-chosen ω, so the sampled
+        # spectrum is one exact bin. M = 256 ⇒ Nyquist bin 128.
+        Hr = MC.TiledHamiltonian(_ring_model(-0.02); dims = (1, 1, 1))
+        crr = _dimer_crystal()
+        M = 256
+        times = collect(0.0:1.0:(M-1))
+        ε = 0.05
+        spiral(ω) = begin
+            traj = Array{Float64,3}(undef, 3, 4, M)
+            for k = 1:M, j = 1:4
+                φ = 2π * (j - 1) / 4 + ω * (k - 1)
+                traj[:, j, k] .= (ε * cos(φ), ε * sin(φ), sqrt(1 - ε^2))
+            end
+            traj
+        end
+        q1 = [[0.0, 0.0, 1.0]]
+        # healthy: ω at bin 38 (0.297·π) — far below the Nyquist, no warning
+        @test_logs structure_factor(spiral(2π * 38 / M), times, Hr, crr, q1;
+                                    window = :none)
+        # aliased: ω at "bin 131" > 128 folds to −125, i.e. |ω| = 0.977·π — inside
+        # the top-5 % edge band, so the screen fires
+        @test_logs (:warn, r"folds back") match_mode = :any structure_factor(
+            spiral(2π * 131 / M), times, Hr, crr, q1; window = :none)
+    end
 end
