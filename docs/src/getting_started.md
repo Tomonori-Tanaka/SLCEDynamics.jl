@@ -51,7 +51,10 @@ ground state — a deterministic run (no temperature) consumes no RNG at all:
 using Random
 
 rng = Xoshiro(1)
-config0 = SLCEMonteCarlo.from_matrix(randn(rng, 3, n_sites(H)))  # random unit spins
+# random unit spins — normalized deliberately: `from_matrix` validates
+# directions and refuses a scaled column rather than normalizing it silently
+m0 = randn(rng, 3, n_sites(H))
+config0 = SLCEMonteCarlo.from_matrix(m0 ./ sqrt.(sum(abs2, m0; dims = 1)))
 
 res = run_llg(prob, config0; dt = 0.5, nsteps = 600,            # dt in fs
               measure_interval = 10,

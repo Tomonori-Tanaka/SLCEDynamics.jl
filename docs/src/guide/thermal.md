@@ -56,7 +56,8 @@ basis = SLCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
 model = SLCEModel(basis, 0.0, [-0.01])
 H = TiledHamiltonian(model; dims = (2, 2, 2))
 prob = LLGProblem(H; magmom = 2.2, alpha = 0.5)
-config0 = SLCEMonteCarlo.from_matrix(randn(Xoshiro(1), 3, n_sites(H)))
+m0 = randn(Xoshiro(1), 3, n_sites(H))
+config0 = SLCEMonteCarlo.from_matrix(m0 ./ sqrt.(sum(abs2, m0; dims = 1)))
 
 res = run_llg(prob, config0; dt = 0.5, nsteps = 4000, kT = 0.01, seed = 42,
               observables = standard_observables(H))

@@ -112,7 +112,8 @@ basis = SLCEBasis(cell, BasisSpec(; nbody = 2, cutoff = 1.1, lmax = [1],
 model = SLCEModel(basis, 0.0, [-0.01])
 H = TiledHamiltonian(model; dims = (2, 2, 2))
 
-config0 = SLCEMonteCarlo.from_matrix(randn(Xoshiro(2), 3, n_sites(H)))
+m0 = randn(Xoshiro(2), 3, n_sites(H))
+config0 = SLCEMonteCarlo.from_matrix(m0 ./ sqrt.(sum(abs2, m0; dims = 1)))
 cons = run_llg(LLGProblem(H; magmom = 2.2, alpha = 0.0), config0;
                dt = 0.25, nsteps = 800, measure_interval = 10)
 maximum(abs, cons.energies .- cons.energies[1])   # the α = 0 conservation gate
